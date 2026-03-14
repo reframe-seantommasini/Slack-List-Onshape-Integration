@@ -289,7 +289,22 @@ function launchApp(){
   document.getElementById('app').style.display='flex';
   if(CONFIG.demo){ loadDemoParts(); return; }
   initOnShape();
-  // Show a helpful message if doc context hasn't arrived yet
+  // Re-send applicationInit after a short delay as a retry
+  // OnShape sometimes needs a moment before it's ready to respond
+  setTimeout(()=>{
+    if(!docId){
+      try{
+        window.parent.postMessage({
+          messageName: 'applicationInit',
+          documentId:  docId,
+          workspaceId: wvmId,
+          elementId:   elementId
+        }, '*');
+      }catch(e){}
+    }
+  }, 1500);
+
+  // Show a helpful message if doc context still hasn't arrived after 3s
   setTimeout(()=>{
     if(!docId){
       document.getElementById('doc-info').textContent='⚠️ No document context — make sure the panel is open inside an OnShape Part Studio';
