@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Manufacturing Pipeline — FRC 6328 v1.7</title>
+<title>Manufacturing Pipeline — FRC 6328 v1.8</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
   :root {
@@ -135,7 +135,7 @@
   <div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:2.2rem;color:var(--gold);letter-spacing:.06em;margin-bottom:4px;">FRC 6328</div>
   <div style="font-family:'Barlow Condensed',sans-serif;font-size:.85rem;color:var(--cream);letter-spacing:.2em;text-transform:uppercase;opacity:.75;margin-bottom:6px;">Mechanical Advantage</div>
   <p>Manufacturing Pipeline — enter credentials to connect</p>
-  <p style="font-size:0.7rem;color:var(--muted);margin-top:-18px;margin-bottom:20px;">v1.7</p>
+  <p style="font-size:0.7rem;color:var(--muted);margin-top:-18px;margin-bottom:20px;">v1.8</p>
   <div class="config-card">
     <h2>OnShape API</h2>
     <div class="cfg-field">
@@ -172,7 +172,7 @@
     <div class="hdr-divider"></div>
     <span class="hdr-title">Mfg Pipeline</span>
     <span class="doc-badge" id="doc-label">No document</span>
-    <span style="font-size:.6rem;color:var(--muted);margin-left:4px;">v1.7</span>
+    <span style="font-size:.6rem;color:var(--muted);margin-left:4px;">v1.8</span>
   </header>
 
   <div id="selection-banner">
@@ -304,7 +304,7 @@ function launchApp(){
   // Retry at 2s and again at 4s if we still don't have a docId.
   function retryInit(label){
     if(docId) return; // already have context, no need
-    console.log(`[MFG v1.7] ${label}: no docId yet, re-sending applicationInit`);
+    console.log(`[MFG v1.8] ${label}: no docId yet, re-sending applicationInit`);
     try{
       window.parent.postMessage({
         messageName: 'applicationInit',
@@ -312,7 +312,7 @@ function launchApp(){
         workspaceId: wvmId,
         elementId:   elementId
       }, '*');
-    }catch(e){ console.warn('[MFG v1.7] postMessage failed:', e); }
+    }catch(e){ console.warn('[MFG v1.8] postMessage failed:', e); }
   }
 
   setTimeout(()=>retryInit('2s retry'), 2000);
@@ -321,7 +321,7 @@ function launchApp(){
   // Show a helpful diagnostic message if doc context still hasn't arrived after 5s
   setTimeout(()=>{
     if(!docId){
-      console.warn('[MFG v1.7] Still no docId after 5s — check the console for postMessage events');
+      console.warn('[MFG v1.8] Still no docId after 5s — check the console for postMessage events');
       document.getElementById('doc-info').textContent=
         '⚠️ No document context — ensure the panel is open inside an OnShape Part Studio. Check console for debug info.';
     }
@@ -329,8 +329,38 @@ function launchApp(){
 }
 function v(id){return document.getElementById(id)?.value?.trim()||'';}
 
-// Run on page load — auto-fills and launches if credentials already saved
-window.addEventListener('DOMContentLoaded', loadSavedConfig);
+// ── EARLY INIT — fires as soon as the DOM is ready ──────────────────────────
+// OnShape has a narrow handshake window right after the iframe loads.
+// We MUST send applicationInit here, unconditionally, before config or anything else.
+// Waiting until after the config screen (launchApp) misses the window entirely.
+window.addEventListener('DOMContentLoaded', ()=>{
+
+  // 1. RAW MESSAGE SPY — logs every postMessage before any filtering.
+  //    Open the panel DevTools (right-click → Inspect in OnShape) and look here.
+  window.addEventListener('message', e=>{
+    console.log('[MFG v1.8 RAW]', {
+      origin: e.origin,
+      messageName: e.data?.messageName,
+      fullData: e.data
+    });
+  }, true); // capture phase — fires before any other listener
+
+  // 2. Send applicationInit immediately so we hit OnShape's handshake window.
+  //    At this point we have no docId yet — that's fine.
+  //    OnShape will respond with applicationElementInfo containing the real IDs.
+  const earlyInit = { messageName:'applicationInit', documentId:'', workspaceId:'', elementId:'' };
+  console.log('[MFG v1.8] DOMContentLoaded — sending early applicationInit');
+  try{ window.parent.postMessage(earlyInit, '*'); }
+  catch(e){ console.warn('[MFG v1.8] Early postMessage failed:', e); }
+
+  // 3. Also register the full message handler immediately so we don't miss a fast reply.
+  //    (initOnShape will call this again later; the duplicate addEventListener is harmless
+  //    because the same function reference is ignored on subsequent adds.)
+  window.addEventListener('message', handleOnShapeMessage);
+
+  // 4. Then run normal config / auto-launch logic
+  loadSavedConfig();
+});
 
 // ── TABS ──
 function switchTab(name){
@@ -341,25 +371,21 @@ function switchTab(name){
 
 // ── ONSHAPE INIT ──
 function initOnShape(){
-  // Try URL params first (may or may not be present in Right Panel context)
+  // Try URL params first (present when OnShape embeds the panel with context in the URL)
   const p=new URLSearchParams(window.location.search);
-  docId=p.get('documentId')||'';
-  wvmType=p.get('versionId')?'v':'w';
-  wvmId=p.get('workspaceId')||p.get('versionId')||'';
-  elementId=p.get('elementId')||'';
+  docId     = p.get('documentId')||'';
+  wvmType   = p.get('versionId')?'v':'w';
+  wvmId     = p.get('workspaceId')||p.get('versionId')||'';
+  elementId = p.get('elementId')||'';
 
-  console.log('[MFG v1.7] initOnShape — URL params:', {docId, wvmType, wvmId, elementId});
+  console.log('[MFG v1.8] initOnShape — URL params:', {docId, wvmType, wvmId, elementId});
 
-  // Always listen for messages — OnShape will send documentInfo/applicationElementInfo
-  window.addEventListener('message', handleOnShapeMessage);
-
-  // Send applicationInit regardless of whether we have URL params
-  // OnShape requires this before it will send any messages to the panel
+  // Note: message listener + early applicationInit already sent at DOMContentLoaded.
+  // Send a second applicationInit now that we may have real IDs from URL params.
   const initMsg = { messageName:'applicationInit', documentId:docId, workspaceId:wvmId, elementId:elementId };
-  console.log('[MFG v1.7] Sending applicationInit:', initMsg);
-  try{
-    window.parent.postMessage(initMsg, '*');
-  }catch(e){ console.warn('[MFG v1.7] postMessage failed:', e); }
+  console.log('[MFG v1.8] initOnShape — sending applicationInit (2nd, with URL params):', initMsg);
+  try{ window.parent.postMessage(initMsg, '*'); }
+  catch(e){ console.warn('[MFG v1.8] postMessage failed:', e); }
 
   // Update UI if we already have doc context from URL params
   if(docId){
@@ -367,7 +393,6 @@ function initOnShape(){
     document.getElementById('doc-info').textContent='doc: '+docId.substring(0,12)+'…';
     loadParts();
   } else {
-    // No URL params — waiting for OnShape to send document context via postMessage
     document.getElementById('doc-info').textContent='Waiting for document context...';
   }
 }
@@ -376,7 +401,7 @@ function initOnShape(){
 function handleOnShapeMessage(e){
   // Log ALL incoming messages so you can see exactly what OnShape sends
   // Check the browser console (right-click → Inspect in the OnShape right panel)
-  console.log('[MFG v1.7] postMessage received:', {
+  console.log('[MFG v1.8] postMessage received:', {
     origin: e.origin,
     messageName: e.data?.messageName,
     data: e.data
@@ -385,7 +410,7 @@ function handleOnShapeMessage(e){
   // In production the origin will be https://cad.onshape.com.
   // During dev/caching it may arrive from a slightly different origin — warn but don't drop.
   if(e.origin !== 'https://cad.onshape.com'){
-    console.warn('[MFG v1.7] Unexpected origin (ignoring for doc-context only):', e.origin);
+    console.warn('[MFG v1.8] Unexpected origin (ignoring for doc-context only):', e.origin);
     // Still allow document-context messages through — OnShape embedded frames can
     // send from subtly different origins depending on region/proxy.
   }
@@ -399,7 +424,7 @@ function handleOnShapeMessage(e){
     case 'documentInfo':
     case 'applicationInfo':
     case 'contextUpdate':
-      console.log('[MFG v1.7] Document context received:', msg);
+      console.log('[MFG v1.8] Document context received:', msg);
       docId      = msg.documentId  || docId;
       wvmId      = msg.workspaceId || msg.wvmId || wvmId;
       elementId  = msg.elementId   || elementId;
@@ -413,7 +438,7 @@ function handleOnShapeMessage(e){
 
     // OnShape sends uppercase 'SELECTION' for right-panel selection events
     case 'SELECTION':
-      console.log('[MFG v1.7] Selection event:', msg.selection);
+      console.log('[MFG v1.8] Selection event:', msg.selection);
       if(msg.selection && Array.isArray(msg.selection)){
         const ids = msg.selection
           .filter(s => s.entityType==='PART' || s.objectType==='PART')
@@ -425,7 +450,7 @@ function handleOnShapeMessage(e){
 
     default:
       // Log unknown message names — helps identify what OnShape actually sends
-      console.log('[MFG v1.7] Unhandled messageName:', msg.messageName, msg);
+      console.log('[MFG v1.8] Unhandled messageName:', msg.messageName, msg);
   }
 }
 
