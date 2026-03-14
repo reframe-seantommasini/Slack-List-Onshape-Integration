@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Manufacturing Pipeline — FRC 6328 v1.8</title>
+<title>Manufacturing Pipeline — FRC 6328 v1.11</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
   :root {
@@ -130,36 +130,13 @@
 </head>
 <body>
 
-<!-- CONFIG -->
-<div id="config-screen">
-  <div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:2.2rem;color:var(--gold);letter-spacing:.06em;margin-bottom:4px;">FRC 6328</div>
-  <div style="font-family:'Barlow Condensed',sans-serif;font-size:.85rem;color:var(--cream);letter-spacing:.2em;text-transform:uppercase;opacity:.75;margin-bottom:6px;">Mechanical Advantage</div>
-  <p>Manufacturing Pipeline — enter credentials to connect</p>
-  <p style="font-size:0.7rem;color:var(--muted);margin-top:-18px;margin-bottom:20px;">v1.8</p>
-  <div class="config-card">
-    <h2>OnShape API</h2>
-    <div class="cfg-field">
-      <label>Access Key</label>
-      <input type="text" id="cfg-os-key" placeholder="Your OnShape access key"/>
-    </div>
-    <div class="cfg-field">
-      <label>Secret Key</label>
-      <input type="text" id="cfg-os-secret" placeholder="Your OnShape secret key"/>
-    </div>
-    <h2 style="margin-top:18px">Slack</h2>
-    <div class="cfg-field">
-      <label>Bot Token</label>
-      <input type="text" id="cfg-slack-token" placeholder="xoxb-..."/>
-      <div class="cfg-note">From your Slack app's OAuth & Permissions page</div>
-    </div>
-    <div class="cfg-field">
-      <label>Channel ID</label>
-      <input type="text" id="cfg-slack-channel" placeholder="C0XXXXXXXXX"/>
-      <div class="cfg-note">Right-click channel → View channel details → Copy ID</div>
-    </div>
-    <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="saveConfig()">Connect & Launch</button>
-    <button class="btn btn-secondary" style="width:100%;margin-top:8px" onclick="useDemoMode()">Demo Mode (no credentials)</button>
-  </div>
+<!-- Config screen removed — all credentials are server-side env vars.
+     Hidden inputs kept so any residual JS getElementById calls don't crash. -->
+<div id="config-screen" style="display:none">
+  <input type="hidden" id="cfg-os-key"/>
+  <input type="hidden" id="cfg-os-secret"/>
+  <input type="hidden" id="cfg-slack-token"/>
+  <input type="hidden" id="cfg-slack-channel"/>
 </div>
 
 <!-- APP -->
@@ -172,7 +149,7 @@
     <div class="hdr-divider"></div>
     <span class="hdr-title">Mfg Pipeline</span>
     <span class="doc-badge" id="doc-label">No document</span>
-    <span style="font-size:.6rem;color:var(--muted);margin-left:4px;">v1.8</span>
+    <span style="font-size:.6rem;color:var(--muted);margin-left:4px;">v1.11</span>
   </header>
 
   <div id="selection-banner">
@@ -242,57 +219,15 @@ const OPTIONS = {
   finish:    ['None','Black','Blue','Yellow','Pink','Other'],
 };
 
-let CONFIG={osKey:'',osSecret:'',slackToken:'',slackChannel:'',demo:false};
+// All credentials are Vercel server-side env vars — no config screen needed.
+// CONFIG only tracks demo mode flag; Slack/OnShape creds never touch the browser.
+let CONFIG={demo:false};
 let pillState={}, attachedFile=null, submissionHistory=[];
 let studioSelectedIds=[];
 let docId='', wvmType='w', wvmId='', elementId='';
 let parts=[], selected=new Set();
 let queue=[], queueIdx=0;
 
-// ── CONFIG ──
-const STORAGE_KEY = 'mfg_pipeline_config';
-
-function loadSavedConfig(){
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if(!saved) return;
-    const c = JSON.parse(saved);
-    if(c.osKey)        document.getElementById('cfg-os-key').value        = c.osKey;
-    if(c.osSecret)     document.getElementById('cfg-os-secret').value     = c.osSecret;
-    if(c.slackToken)   document.getElementById('cfg-slack-token').value   = c.slackToken;
-    if(c.slackChannel) document.getElementById('cfg-slack-channel').value = c.slackChannel;
-    // Auto-launch only when ALL four credentials are present
-    if(c.osKey && c.osSecret && c.slackToken && c.slackChannel){
-      CONFIG = {...CONFIG, osKey:c.osKey, osSecret:c.osSecret,
-                           slackToken:c.slackToken, slackChannel:c.slackChannel};
-      launchApp();
-    }
-  } catch(e){}
-}
-
-function saveConfig(){
-  CONFIG.osKey        = v('cfg-os-key');
-  CONFIG.osSecret     = v('cfg-os-secret');
-  CONFIG.slackToken   = v('cfg-slack-token');
-  CONFIG.slackChannel = v('cfg-slack-channel');
-  if(!CONFIG.osKey || !CONFIG.osSecret){
-    showToast('Please fill in your OnShape API keys', true); return;
-  }
-  if(!CONFIG.slackToken || !CONFIG.slackChannel){
-    showToast('Please fill in your Slack bot token and channel ID', true); return;
-  }
-  // Persist all four fields (move Slack token to a proxy in production — see Long Term notes)
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      osKey: CONFIG.osKey, osSecret: CONFIG.osSecret,
-      slackToken: CONFIG.slackToken, slackChannel: CONFIG.slackChannel
-    }));
-  } catch(e){}
-  launchApp();
-}
-function clearSavedConfig(){
-  try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
-}
 function useDemoMode(){CONFIG.demo=true;launchApp();}
 function launchApp(){
   document.getElementById('config-screen').style.display='none';
@@ -304,7 +239,7 @@ function launchApp(){
   // Retry at 2s and again at 4s if we still don't have a docId.
   function retryInit(label){
     if(docId) return; // already have context, no need
-    console.log(`[MFG v1.8] ${label}: no docId yet, re-sending applicationInit`);
+    console.log(`[MFG v1.11] ${label}: no docId yet, re-sending applicationInit`);
     try{
       window.parent.postMessage({
         messageName: 'applicationInit',
@@ -312,18 +247,21 @@ function launchApp(){
         workspaceId: wvmId,
         elementId:   elementId
       }, '*');
-    }catch(e){ console.warn('[MFG v1.8] postMessage failed:', e); }
+    }catch(e){ console.warn('[MFG v1.11] postMessage failed:', e); }
   }
 
   setTimeout(()=>retryInit('2s retry'), 2000);
   setTimeout(()=>retryInit('4s retry'), 4000);
 
-  // Show a helpful diagnostic message if doc context still hasn't arrived after 5s
+  // 5s diagnostic: if still no docId, the URL params are missing from the Action URL
   setTimeout(()=>{
     if(!docId){
-      console.warn('[MFG v1.8] Still no docId after 5s — check the console for postMessage events');
-      document.getElementById('doc-info').textContent=
-        '⚠️ No document context — ensure the panel is open inside an OnShape Part Studio. Check console for debug info.';
+      console.error('[MFG v1.11] Still no docId after 5s.');
+      console.error('[MFG v1.11] ROOT CAUSE: The OnShape dev portal Action URL is missing {$documentId} params.');
+      console.error('[MFG v1.11] Fix: set Action URL to: https://reframe-seantommasini.github.io/Slack-List-Onshape-Integration/index.html?documentId={$documentId}&workspaceId={$workspaceId}&elementId={$elementId}&v=111');
+      document.getElementById('doc-info').textContent =
+        '⚠️ No document context — Action URL is missing {$documentId} params. See browser console for exact fix.';
+      document.getElementById('doc-label').textContent = 'Fix needed';
     }
   }, 5000);
 }
@@ -338,7 +276,7 @@ window.addEventListener('DOMContentLoaded', ()=>{
   // 1. RAW MESSAGE SPY — logs every postMessage before any filtering.
   //    Open the panel DevTools (right-click → Inspect in OnShape) and look here.
   window.addEventListener('message', e=>{
-    console.log('[MFG v1.8 RAW]', {
+    console.log('[MFG v1.11 RAW]', {
       origin: e.origin,
       messageName: e.data?.messageName,
       fullData: e.data
@@ -349,17 +287,17 @@ window.addEventListener('DOMContentLoaded', ()=>{
   //    At this point we have no docId yet — that's fine.
   //    OnShape will respond with applicationElementInfo containing the real IDs.
   const earlyInit = { messageName:'applicationInit', documentId:'', workspaceId:'', elementId:'' };
-  console.log('[MFG v1.8] DOMContentLoaded — sending early applicationInit');
+  console.log('[MFG v1.11] DOMContentLoaded — sending early applicationInit');
   try{ window.parent.postMessage(earlyInit, '*'); }
-  catch(e){ console.warn('[MFG v1.8] Early postMessage failed:', e); }
+  catch(e){ console.warn('[MFG v1.11] Early postMessage failed:', e); }
 
   // 3. Also register the full message handler immediately so we don't miss a fast reply.
   //    (initOnShape will call this again later; the duplicate addEventListener is harmless
   //    because the same function reference is ignored on subsequent adds.)
   window.addEventListener('message', handleOnShapeMessage);
 
-  // 4. Then run normal config / auto-launch logic
-  loadSavedConfig();
+  // 4. Auto-launch immediately — no config screen, all credentials are server-side
+  launchApp();
 });
 
 // ── TABS ──
@@ -370,30 +308,41 @@ function switchTab(name){
 }
 
 // ── ONSHAPE INIT ──
+// PRIMARY path: OnShape injects documentId/workspaceId/elementId directly into the
+// Action URL as {$documentId} etc. (set this in the dev portal — see README).
+// postMessage / applicationInit is kept as a secondary fallback for cases where
+// URL params aren't present, but it's NOT the primary mechanism anymore because
+// GitHub Pages (github.io) is not in OnShape's frame-src CSP allowlist, which
+// silences postMessage communication entirely.
 function initOnShape(){
-  // Try URL params first (present when OnShape embeds the panel with context in the URL)
-  const p=new URLSearchParams(window.location.search);
-  docId     = p.get('documentId')||'';
-  wvmType   = p.get('versionId')?'v':'w';
-  wvmId     = p.get('workspaceId')||p.get('versionId')||'';
-  elementId = p.get('elementId')||'';
+  const p = new URLSearchParams(window.location.search);
 
-  console.log('[MFG v1.8] initOnShape — URL params:', {docId, wvmType, wvmId, elementId});
+  docId     = p.get('documentId') || '';
+  wvmId     = p.get('workspaceId') || p.get('versionId') || '';
+  wvmType   = p.get('versionId') ? 'v' : 'w';
+  elementId = p.get('elementId') || '';
 
-  // Note: message listener + early applicationInit already sent at DOMContentLoaded.
-  // Send a second applicationInit now that we may have real IDs from URL params.
-  const initMsg = { messageName:'applicationInit', documentId:docId, workspaceId:wvmId, elementId:elementId };
-  console.log('[MFG v1.8] initOnShape — sending applicationInit (2nd, with URL params):', initMsg);
-  try{ window.parent.postMessage(initMsg, '*'); }
-  catch(e){ console.warn('[MFG v1.8] postMessage failed:', e); }
+  console.log('[MFG v1.11] initOnShape — URL params:', {docId, wvmType, wvmId, elementId});
 
-  // Update UI if we already have doc context from URL params
-  if(docId){
-    document.getElementById('doc-label').textContent=docId.substring(0,8)+'...';
-    document.getElementById('doc-info').textContent='doc: '+docId.substring(0,12)+'…';
+  if(docId && wvmId && elementId){
+    // ✓ Got full context from URL params — this is the happy path.
+    // No postMessage needed. Load parts immediately.
+    console.log('[MFG v1.11] Full context from URL params — loading parts directly');
+    document.getElementById('doc-label').textContent = docId.substring(0,8)+'...';
+    document.getElementById('doc-info').textContent  = 'doc: '+docId.substring(0,12)+'…';
     loadParts();
+    // Still send applicationInit so OnShape sends SELECTION events for live selection
+    try{ window.parent.postMessage({messageName:'applicationInit',documentId:docId,workspaceId:wvmId,elementId:elementId},'*'); }
+    catch(e){}
   } else {
-    document.getElementById('doc-info').textContent='Waiting for document context...';
+    // Fallback: no URL params — try postMessage handshake.
+    // This path works when github.io IS on the CSP allowlist, or when hosted on
+    // a CSP-allowed domain (Vercel/Cloudflare). See Action URL setup in README.
+    console.warn('[MFG v1.11] No URL params — falling back to postMessage (may be blocked by CSP).');
+    console.warn('[MFG v1.11] Fix: add ?documentId={$documentId}&workspaceId={$workspaceId}&elementId={$elementId} to the Action URL in the OnShape dev portal.');
+    document.getElementById('doc-info').textContent = 'Waiting for document context...';
+    // postMessage listener already registered at DOMContentLoaded
+    // Retry pings are handled in launchApp()
   }
 }
 
@@ -401,7 +350,7 @@ function initOnShape(){
 function handleOnShapeMessage(e){
   // Log ALL incoming messages so you can see exactly what OnShape sends
   // Check the browser console (right-click → Inspect in the OnShape right panel)
-  console.log('[MFG v1.8] postMessage received:', {
+  console.log('[MFG v1.11] postMessage received:', {
     origin: e.origin,
     messageName: e.data?.messageName,
     data: e.data
@@ -410,7 +359,7 @@ function handleOnShapeMessage(e){
   // In production the origin will be https://cad.onshape.com.
   // During dev/caching it may arrive from a slightly different origin — warn but don't drop.
   if(e.origin !== 'https://cad.onshape.com'){
-    console.warn('[MFG v1.8] Unexpected origin (ignoring for doc-context only):', e.origin);
+    console.warn('[MFG v1.11] Unexpected origin (ignoring for doc-context only):', e.origin);
     // Still allow document-context messages through — OnShape embedded frames can
     // send from subtly different origins depending on region/proxy.
   }
@@ -424,7 +373,7 @@ function handleOnShapeMessage(e){
     case 'documentInfo':
     case 'applicationInfo':
     case 'contextUpdate':
-      console.log('[MFG v1.8] Document context received:', msg);
+      console.log('[MFG v1.11] Document context received:', msg);
       docId      = msg.documentId  || docId;
       wvmId      = msg.workspaceId || msg.wvmId || wvmId;
       elementId  = msg.elementId   || elementId;
@@ -438,7 +387,7 @@ function handleOnShapeMessage(e){
 
     // OnShape sends uppercase 'SELECTION' for right-panel selection events
     case 'SELECTION':
-      console.log('[MFG v1.8] Selection event:', msg.selection);
+      console.log('[MFG v1.11] Selection event:', msg.selection);
       if(msg.selection && Array.isArray(msg.selection)){
         const ids = msg.selection
           .filter(s => s.entityType==='PART' || s.objectType==='PART')
@@ -450,7 +399,7 @@ function handleOnShapeMessage(e){
 
     default:
       // Log unknown message names — helps identify what OnShape actually sends
-      console.log('[MFG v1.8] Unhandled messageName:', msg.messageName, msg);
+      console.log('[MFG v1.11] Unhandled messageName:', msg.messageName, msg);
   }
 }
 
@@ -489,9 +438,8 @@ function autoSelectFromStudio(){
 
 // ── ONSHAPE API ──
 async function onshapeFetch(path){
-  const resp=await fetch('https://cad.onshape.com/api/v6'+path,{
-    headers:{'Authorization':'Basic '+btoa(CONFIG.osKey+':'+CONFIG.osSecret),'Accept':'application/json'}
-  });
+  // Route through Vercel proxy to avoid CORS — OnShape blocks direct browser API calls
+  const resp = await fetch('/api/onshape?path='+encodeURIComponent(path));
   if(!resp.ok) throw new Error('OnShape API '+resp.status);
   return resp.json();
 }
@@ -664,31 +612,25 @@ async function exportStepFile(part) {
   if (CONFIG.demo) return null;
   if (!docId || !wvmId || !part.studio) return null;
 
-  // 1. Request translation
-  const transResp = await fetch(
-    `https://cad.onshape.com/api/v6/partstudios/d/${docId}/w/${wvmId}/e/${part.studio}/translations`,
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Basic ' + btoa(CONFIG.osKey + ':' + CONFIG.osSecret),
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify({
-        formatName: 'STEP',
-        partIds: [part.id],
-        flattenAssemblies: false,
-        yAxisIsUp: false,
-        sendCopyToForeign: false,
-        storeInDocument: false
-      })
-    }
-  );
+  // 1. Request translation via proxy
+  const transPath = `/partstudios/d/${docId}/w/${wvmId}/e/${part.studio}/translations`;
+  const transResp = await fetch('/api/onshape?path=' + encodeURIComponent(transPath), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      formatName: 'STEP',
+      partIds: [part.id],
+      flattenAssemblies: false,
+      yAxisIsUp: false,
+      sendCopyToForeign: false,
+      storeInDocument: false
+    })
+  });
   if (!transResp.ok) throw new Error('Translation request failed: ' + transResp.status);
   const trans = await transResp.json();
   const translationId = trans.id;
 
-  // 2. Poll until DONE or timeout
+  // 2. Poll until DONE or timeout (via proxy)
   const deadline = Date.now() + STEP_TIMEOUT_MS;
   let foreignId = null;
   while (Date.now() < deadline) {
@@ -702,39 +644,37 @@ async function exportStepFile(part) {
   }
   if (!foreignId) return null; // timed out — caller will warn
 
-  // 3. Download the file bytes
-  const fileResp = await fetch(
-    `https://cad.onshape.com/api/v6/documents/d/${docId}/externaldata/${foreignId}`,
-    { headers: { 'Authorization': 'Basic ' + btoa(CONFIG.osKey + ':' + CONFIG.osSecret) } }
-  );
+  // 3. Download file bytes via proxy (binary passthrough)
+  const filePath = `/documents/d/${docId}/externaldata/${foreignId}`;
+  const fileResp = await fetch('/api/onshape?path=' + encodeURIComponent(filePath));
   if (!fileResp.ok) throw new Error('File download failed: ' + fileResp.status);
   const blob = await fileResp.blob();
   return { blob, filename: `${part.name.replace(/\s+/g,'_')}.step` };
 }
 
 async function uploadStepToSlack(fileData, channelId, partName) {
-  // Step A: get upload URL
-  const urlResp = await fetch('https://slack.com/api/files.getUploadURLExternal', {
+  // Step A: get upload URL via proxy
+  const urlData = await (await fetch('/api/slack', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + CONFIG.slackToken },
-    body: JSON.stringify({ filename: fileData.filename, length: fileData.blob.size })
-  });
-  const urlData = await urlResp.json();
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'getUploadURL', payload: {
+      filename: fileData.filename, length: fileData.blob.size
+    }})
+  })).json();
   if (!urlData.ok) throw new Error('Slack upload URL error: ' + urlData.error);
 
-  // Step B: PUT the file bytes
-  await fetch(urlData.upload_url, { method: 'POST', body: fileData.blob });
+  // Step B: PUT file bytes directly to Slack's upload URL (this is a pre-signed URL, no token needed)
+  await fetch(urlData.upload_url, { method: 'PUT', body: fileData.blob });
 
-  // Step C: complete upload and share to channel
-  const completeResp = await fetch('https://slack.com/api/files.completeUploadExternal', {
+  // Step C: complete upload via proxy
+  const completeData = await (await fetch('/api/slack', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + CONFIG.slackToken },
-    body: JSON.stringify({
-      files: [{ id: urlData.file_id, title: `${partName} — STEP File` }],
-      channel_id: channelId
-    })
-  });
-  const completeData = await completeResp.json();
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'completeUpload', payload: {
+      file_id: urlData.file_id,
+      title: `${partName} — STEP File`
+    }})
+  })).json();
   if (!completeData.ok) throw new Error('Slack complete upload error: ' + completeData.error);
 }
 
@@ -768,7 +708,7 @@ async function submitPart(){
         const fileData = await exportStepFile(part);
         if (fileData) {
           btn.innerHTML='<span class="spinner"></span> Uploading STEP...';
-          await uploadStepToSlack(fileData, CONFIG.slackChannel, name);
+          await uploadStepToSlack(fileData, null, name); // channel set server-side
         } else {
           showToast(`⚠️ STEP export timed out for "${name}" — card posted without file`, true);
         }
@@ -810,25 +750,14 @@ function addToHistory(p){
 
 // ── SLACK ──
 async function postToSlack(p){
-  const fields=[
-    ['CAD Version',p.cadVersion],['Project',p.project],['Machine',p.machine||'TBD'],
-    ['Material',p.material||'TBD'],['Thickness',p.thickness||'TBD'],['Type of Part',p.partType||'TBD'],
-    ['Quantity',p.qty],['Finish',p.finish||'None'],['Assigned To',p.student||'Unassigned'],
-    ['CAD Link',p.cadLink?`<${p.cadLink}|Open in OnShape>`:'N/A'],['Part File',p.fileName||'None attached']
-  ];
-  const body={channel:CONFIG.slackChannel,text:`🔧 NEW MANUFACTURING CARD: ${p.name}`,
-    blocks:[
-      {type:'header',text:{type:'plain_text',text:`🔧 ${p.name}`,emoji:true}},
-      {type:'section',fields:fields.slice(0,8).map(([k,val])=>({type:'mrkdwn',text:`*${k}*\n${val}`}))},
-      {type:'section',fields:fields.slice(8).map(([k,val])=>({type:'mrkdwn',text:`*${k}*\n${val}`}))},
-      ...(p.notes?[{type:'section',text:{type:'mrkdwn',text:`*Notes*\n${p.notes}`}}]:[]),
-      {type:'divider'}
-    ]};
-  const resp=await fetch('https://slack.com/api/chat.postMessage',{method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':'Bearer '+CONFIG.slackToken},
-    body:JSON.stringify(body)});
-  const data=await resp.json();
-  if(!data.ok) throw new Error(data.error||'Unknown Slack error');
+  // Routed through /api/slack proxy — Slack token stays server-side
+  const resp = await fetch('/api/slack', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'postMessage', payload: p })
+  });
+  const data = await resp.json();
+  if(!data.ok) throw new Error(data.error || 'Slack proxy error');
 }
 
 // ── TOAST ──
