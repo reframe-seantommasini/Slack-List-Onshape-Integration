@@ -171,6 +171,7 @@
     <div class="hdr-divider"></div>
     <span class="hdr-title">Mfg Pipeline</span>
     <span class="doc-badge" id="doc-label">No document</span>
+    <span style="font-size:.6rem;color:var(--muted);margin-left:4px;">v1.4</span>
   </header>
 
   <div id="selection-banner">
@@ -285,7 +286,14 @@ function useDemoMode(){CONFIG.demo=true;launchApp();}
 function launchApp(){
   document.getElementById('config-screen').style.display='none';
   document.getElementById('app').style.display='flex';
-  CONFIG.demo ? loadDemoParts() : initOnShape();
+  if(CONFIG.demo){ loadDemoParts(); return; }
+  initOnShape();
+  // Show a helpful message if doc context hasn't arrived yet
+  setTimeout(()=>{
+    if(!docId){
+      document.getElementById('doc-info').textContent='⚠️ No document context — make sure the panel is open inside an OnShape Part Studio';
+    }
+  }, 3000);
 }
 function v(id){return document.getElementById(id)?.value?.trim()||'';}
 
