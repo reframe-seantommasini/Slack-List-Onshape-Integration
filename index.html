@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Manufacturing Pipeline — FRC 6328 v1.13</title>
+<title>Manufacturing Pipeline — FRC 6328 v1.14</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
   :root {
@@ -149,7 +149,7 @@
     <div class="hdr-divider"></div>
     <span class="hdr-title">Mfg Pipeline</span>
     <span class="doc-badge" id="doc-label">No document</span>
-    <span style="font-size:.6rem;color:var(--muted);margin-left:4px;">v1.13</span>
+    <span style="font-size:.6rem;color:var(--muted);margin-left:4px;">v1.14</span>
   </header>
 
   <div id="selection-banner">
@@ -225,7 +225,7 @@ const OPTIONS = {
 let CONFIG={demo:false};
 let pillState={}, attachedFile=null, submissionHistory=[];
 let studioSelectedIds=[];
-let docId='', wvmType='w', wvmId='', elementId='';
+let docId='', wvmType='w', wvmId='', elementId='', osServer='https://cad.onshape.com';
 let parts=[], selected=new Set();
 let queue=[], queueIdx=0;
 
@@ -239,27 +239,26 @@ function launchApp(){
   // OnShape sometimes takes a few seconds to respond to applicationInit.
   // Retry at 2s and again at 4s if we still don't have a docId.
   function retryInit(label){
-    if(docId) return; // already have context, no need
-    console.log(`[MFG v1.13] ${label}: no docId yet, re-sending applicationInit`);
+    if(docId) return;
+    console.log(`[MFG v1.14] ${label}: no docId yet, re-sending applicationInit`);
     try{
       window.parent.postMessage({
         messageName: 'applicationInit',
         documentId:  docId,
         workspaceId: wvmId,
         elementId:   elementId
-      }, '*');
-    }catch(e){ console.warn('[MFG v1.13] postMessage failed:', e); }
+      }, osServer||'*');
+    }catch(e){ console.warn('[MFG v1.14] postMessage failed:', e); }
   }
 
   setTimeout(()=>retryInit('2s retry'), 2000);
   setTimeout(()=>retryInit('4s retry'), 4000);
 
-  // 5s diagnostic: if still no docId, the URL params are missing from the Action URL
   setTimeout(()=>{
     if(!docId){
-      console.error('[MFG v1.13] Still no docId after 5s.');
-      console.error('[MFG v1.13] ROOT CAUSE: The OnShape dev portal Action URL is missing {$documentId} params.');
-      console.error('[MFG v1.13] Fix: set Action URL to: https://reframe-seantommasini.github.io/Slack-List-Onshape-Integration/index.html?documentId={$documentId}&workspaceId={$workspaceId}&elementId={$elementId}&v=113');
+      console.error('[MFG v1.14] Still no docId after 5s.');
+      console.error('[MFG v1.14] ROOT CAUSE: The OnShape dev portal Action URL is missing {$documentId} params.');
+      console.error('[MFG v1.14] Fix: set Action URL to include {$documentId}&workspaceId={$workspaceId}&elementId={$elementId}&selectedPartIds={$selectedPartIds}&server={$server}');
       document.getElementById('doc-info').textContent =
         '⚠️ No document context — Action URL is missing {$documentId} params. See browser console for exact fix.';
       document.getElementById('doc-label').textContent = 'Fix needed';
@@ -268,36 +267,24 @@ function launchApp(){
 }
 function v(id){return document.getElementById(id)?.value?.trim()||'';}
 
-// ── EARLY INIT — fires as soon as the DOM is ready ──────────────────────────
-// OnShape has a narrow handshake window right after the iframe loads.
-// We MUST send applicationInit here, unconditionally, before config or anything else.
-// Waiting until after the config screen (launchApp) misses the window entirely.
+// ── INIT — fires as soon as the DOM is ready ────────────────────────────────
 window.addEventListener('DOMContentLoaded', ()=>{
 
   // 1. RAW MESSAGE SPY — logs every postMessage before any filtering.
-  //    Open the panel DevTools (right-click → Inspect in OnShape) and look here.
   window.addEventListener('message', e=>{
-    console.log('[MFG v1.13 RAW]', {
+    console.log('[MFG v1.14 RAW]', {
       origin: e.origin,
       messageName: e.data?.messageName,
       fullData: e.data
     });
-  }, true); // capture phase — fires before any other listener
+  }, true);
 
-  // 2. Send applicationInit immediately so we hit OnShape's handshake window.
-  //    At this point we have no docId yet — that's fine.
-  //    OnShape will respond with applicationElementInfo containing the real IDs.
-  const earlyInit = { messageName:'applicationInit', documentId:'', workspaceId:'', elementId:'' };
-  console.log('[MFG v1.13] DOMContentLoaded — sending early applicationInit');
-  try{ window.parent.postMessage(earlyInit, '*'); }
-  catch(e){ console.warn('[MFG v1.13] Early postMessage failed:', e); }
-
-  // 3. Also register the full message handler immediately so we don't miss a fast reply.
-  //    (initOnShape will call this again later; the duplicate addEventListener is harmless
-  //    because the same function reference is ignored on subsequent adds.)
+  // 2. Register full message handler immediately so we don't miss anything.
   window.addEventListener('message', handleOnShapeMessage);
 
-  // 4. Auto-launch immediately — no config screen, all credentials are server-side
+  // 3. Auto-launch — parses URL params first, THEN sends applicationInit with real IDs.
+  //    Per OnShape docs, applicationInit MUST include valid documentId/workspaceId/elementId
+  //    or OnShape silently rejects it and never sends SELECTION events.
   launchApp();
 });
 
@@ -309,9 +296,10 @@ function switchTab(name){
 }
 
 // ── ONSHAPE INIT ──
-// OnShape injects all context directly into the Action URL as {$param} tokens.
-// postMessage is blocked by OnShape's CSP for non-allowlisted domains, so URL
-// params are the only reliable way to get document context AND part selection.
+// OnShape injects context into the Action URL as {$param} tokens.
+// After parsing, we send applicationInit with REAL IDs — OnShape requires valid IDs
+// before it will start sending SELECTION postMessages to the iframe.
+let keepAliveInterval = null;
 function initOnShape(){
   const p = new URLSearchParams(window.location.search);
 
@@ -319,19 +307,49 @@ function initOnShape(){
   wvmId     = p.get('workspaceId') || p.get('versionId') || '';
   wvmType   = p.get('versionId') ? 'v' : 'w';
   elementId = p.get('elementId') || '';
+  // {$server} gives us the exact origin to target and validate — required for SELECTION to work
+  osServer  = p.get('server') || 'https://cad.onshape.com';
 
-  // {$selectedPartIds} is a comma-separated list of part IDs selected in the viewport
-  // when the user clicks the panel icon. Snapshot on load — not live.
+  // {$selectedPartIds} is a snapshot of what was selected when the panel icon was clicked
   const selectedParam = p.get('selectedPartIds') || '';
   studioSelectedIds = selectedParam ? selectedParam.split(',').filter(Boolean) : [];
 
-  console.log('[MFG v1.13] initOnShape — URL params:', {docId, wvmType, wvmId, elementId, selectedCount: studioSelectedIds.length});
+  console.log('[MFG v1.14] initOnShape — URL params:', {docId, wvmType, wvmId, elementId, osServer, selectedCount: studioSelectedIds.length});
 
   if(docId && wvmId && elementId){
     document.getElementById('doc-label').textContent = docId.substring(0,8)+'...';
     document.getElementById('doc-info').textContent  = 'doc: '+docId.substring(0,12)+'…';
 
-    // If parts were pre-selected in viewport, show banner immediately
+    // ── Send applicationInit with REAL IDs ──────────────────────────────────
+    // OnShape docs: "Post a message on startup — Onshape will not post messages until
+    // a newly started extension has first posted a valid message."
+    // Empty IDs in the early init were being silently rejected. This is the fix.
+    const initMsg = {
+      messageName: 'applicationInit',
+      documentId:   docId,
+      workspaceId:  wvmId,
+      elementId:    elementId
+    };
+    console.log('[MFG v1.14] Sending applicationInit with real IDs to', osServer);
+    try{ window.parent.postMessage(initMsg, osServer); }
+    catch(e){ console.warn('[MFG v1.14] applicationInit postMessage failed:', e); }
+
+    // ── keepAlive heartbeat ─────────────────────────────────────────────────
+    // OnShape requires periodic keepAlive messages to keep the session alive
+    // and to keep SELECTION events flowing after the initial handshake.
+    if(keepAliveInterval) clearInterval(keepAliveInterval);
+    keepAliveInterval = setInterval(()=>{
+      try{
+        window.parent.postMessage({
+          messageName:  'keepAlive',
+          documentId:   docId,
+          workspaceId:  wvmId,
+          elementId:    elementId
+        }, osServer);
+      }catch(e){}
+    }, 25000); // every 25s — well within OnShape's session timeout
+
+    // Show banner if parts were pre-selected via URL snapshot
     if(studioSelectedIds.length > 0){
       document.getElementById('sel-banner-text').textContent =
         `${studioSelectedIds.length} part${studioSelectedIds.length!==1?'s':''} selected in Part Studio`;
@@ -340,39 +358,36 @@ function initOnShape(){
 
     loadParts();
   } else {
-    console.warn('[MFG v1.13] No URL params — check Action URL includes {$documentId}, {$workspaceId}, {$elementId}, {$selectedPartIds}');
+    console.warn('[MFG v1.14] No URL params — check Action URL includes {$documentId}, {$workspaceId}, {$elementId}, {$selectedPartIds}, {$server}');
     document.getElementById('doc-info').textContent = 'Waiting for document context...';
   }
 }
 
 // ── ONSHAPE MESSAGE HANDLER ──
 function handleOnShapeMessage(e){
-  // Log ALL incoming messages so you can see exactly what OnShape sends
-  // Check the browser console (right-click → Inspect in the OnShape right panel)
-  console.log('[MFG v1.13] postMessage received:', {
+  console.log('[MFG v1.14] postMessage received:', {
     origin: e.origin,
     messageName: e.data?.messageName,
     data: e.data
   });
 
-  // In production the origin will be https://cad.onshape.com.
-  // During dev/caching it may arrive from a slightly different origin — warn but don't drop.
-  if(e.origin !== 'https://cad.onshape.com'){
-    console.warn('[MFG v1.13] Unexpected origin (ignoring for doc-context only):', e.origin);
-    // Still allow document-context messages through — OnShape embedded frames can
-    // send from subtly different origins depending on region/proxy.
+  // Validate origin against the {$server} param — required for security and for
+  // OnShape to trust our postMessages back. Fall back to cad.onshape.com if not set.
+  const expectedOrigin = osServer || 'https://cad.onshape.com';
+  if(e.origin !== expectedOrigin){
+    console.warn('[MFG v1.14] Unexpected origin (skipping):', e.origin, '— expected:', expectedOrigin);
+    return;
   }
 
   const msg = e.data;
   if(!msg || !msg.messageName) return;
 
   switch(msg.messageName){
-    // All known variants OnShape uses for document/element context
     case 'applicationElementInfo':
     case 'documentInfo':
     case 'applicationInfo':
     case 'contextUpdate':
-      console.log('[MFG v1.13] Document context received:', msg);
+      console.log('[MFG v1.14] Document context received:', msg);
       docId      = msg.documentId  || docId;
       wvmId      = msg.workspaceId || msg.wvmId || wvmId;
       elementId  = msg.elementId   || elementId;
@@ -384,9 +399,9 @@ function handleOnShapeMessage(e){
       }
       break;
 
-    // OnShape sends uppercase 'SELECTION' for right-panel selection events
+    // OnShape sends 'SELECTION' events once applicationInit with valid IDs has been accepted
     case 'SELECTION':
-      console.log('[MFG v1.13] Selection event:', msg.selection);
+      console.log('[MFG v1.14] Selection event:', msg.selection);
       if(msg.selection && Array.isArray(msg.selection)){
         const ids = msg.selection
           .filter(s => s.entityType==='PART' || s.objectType==='PART')
@@ -397,8 +412,7 @@ function handleOnShapeMessage(e){
       break;
 
     default:
-      // Log unknown message names — helps identify what OnShape actually sends
-      console.log('[MFG v1.13] Unhandled messageName:', msg.messageName, msg);
+      console.log('[MFG v1.14] Unhandled messageName:', msg.messageName, msg);
   }
 }
 
@@ -409,8 +423,13 @@ function handleStudioSelectionChange(ids){
     document.getElementById('sel-banner-text').textContent=
       `${ids.length} part${ids.length!==1?'s':''} selected in Part Studio`;
     banner.classList.add('visible');
+    // Live SELECTION event — auto-apply immediately so the user doesn't need to
+    // click "Use Selection" every time they select in the viewport.
+    if(parts.length) autoSelectFromStudio();
   } else {
     banner.classList.remove('visible');
+    // Deselect all when nothing is selected in the viewport
+    clearSelection();
   }
 }
 
