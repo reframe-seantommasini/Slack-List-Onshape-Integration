@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Manufacturing Pipeline — FRC 6328 v1.11</title>
+<title>Manufacturing Pipeline — FRC 6328 v1.13</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
   :root {
@@ -149,7 +149,7 @@
     <div class="hdr-divider"></div>
     <span class="hdr-title">Mfg Pipeline</span>
     <span class="doc-badge" id="doc-label">No document</span>
-    <span style="font-size:.6rem;color:var(--muted);margin-left:4px;">v1.11</span>
+    <span style="font-size:.6rem;color:var(--muted);margin-left:4px;">v1.13</span>
   </header>
 
   <div id="selection-banner">
@@ -157,6 +157,7 @@
     <span id="sel-banner-text">Parts selected in Studio</span>
     <button id="use-sel-btn" onclick="useStudioSelection()">Use Selection</button>
   </div>
+  <!-- Note: selection-banner is shown for visual feedback; parts are auto-checked on load -->
 
   <div class="tab-bar">
     <div class="tab active" onclick="switchTab('parts')">Parts</div>
@@ -215,7 +216,7 @@ const OPTIONS = {
   machine:   ['CNC Router','CNC Mill','Lathe','3D Printer','Laser Cutter','Bandsaw','Hand Tools','Other'],
   material:  ['Aluminum','Polycarb','PLA+','Steel (Mild)','Carbon Fiber','Other'],
   thickness: ['1/16 in','1/8 in','3/16 in','1/4 in','3/8 in','1/2 in','0.09 in','Other'],
-  partType:  ['Plate','Hex Shaft','Round Shaft','Billet','Tube 1×1"','Tube 1×2"','Tube 2×2"','Other'],
+  partType:  ['Plate','Hex Shaft','Round Shaft','Billet','Tube 1×1in','Tube 1×2in','Tube 2×2in','1.125in Tube','1.5in Tube','Other'],
   finish:    ['None','Black','Blue','Yellow','Pink','Other'],
 };
 
@@ -239,7 +240,7 @@ function launchApp(){
   // Retry at 2s and again at 4s if we still don't have a docId.
   function retryInit(label){
     if(docId) return; // already have context, no need
-    console.log(`[MFG v1.11] ${label}: no docId yet, re-sending applicationInit`);
+    console.log(`[MFG v1.13] ${label}: no docId yet, re-sending applicationInit`);
     try{
       window.parent.postMessage({
         messageName: 'applicationInit',
@@ -247,7 +248,7 @@ function launchApp(){
         workspaceId: wvmId,
         elementId:   elementId
       }, '*');
-    }catch(e){ console.warn('[MFG v1.11] postMessage failed:', e); }
+    }catch(e){ console.warn('[MFG v1.13] postMessage failed:', e); }
   }
 
   setTimeout(()=>retryInit('2s retry'), 2000);
@@ -256,9 +257,9 @@ function launchApp(){
   // 5s diagnostic: if still no docId, the URL params are missing from the Action URL
   setTimeout(()=>{
     if(!docId){
-      console.error('[MFG v1.11] Still no docId after 5s.');
-      console.error('[MFG v1.11] ROOT CAUSE: The OnShape dev portal Action URL is missing {$documentId} params.');
-      console.error('[MFG v1.11] Fix: set Action URL to: https://reframe-seantommasini.github.io/Slack-List-Onshape-Integration/index.html?documentId={$documentId}&workspaceId={$workspaceId}&elementId={$elementId}&v=111');
+      console.error('[MFG v1.13] Still no docId after 5s.');
+      console.error('[MFG v1.13] ROOT CAUSE: The OnShape dev portal Action URL is missing {$documentId} params.');
+      console.error('[MFG v1.13] Fix: set Action URL to: https://reframe-seantommasini.github.io/Slack-List-Onshape-Integration/index.html?documentId={$documentId}&workspaceId={$workspaceId}&elementId={$elementId}&v=113');
       document.getElementById('doc-info').textContent =
         '⚠️ No document context — Action URL is missing {$documentId} params. See browser console for exact fix.';
       document.getElementById('doc-label').textContent = 'Fix needed';
@@ -276,7 +277,7 @@ window.addEventListener('DOMContentLoaded', ()=>{
   // 1. RAW MESSAGE SPY — logs every postMessage before any filtering.
   //    Open the panel DevTools (right-click → Inspect in OnShape) and look here.
   window.addEventListener('message', e=>{
-    console.log('[MFG v1.11 RAW]', {
+    console.log('[MFG v1.13 RAW]', {
       origin: e.origin,
       messageName: e.data?.messageName,
       fullData: e.data
@@ -287,9 +288,9 @@ window.addEventListener('DOMContentLoaded', ()=>{
   //    At this point we have no docId yet — that's fine.
   //    OnShape will respond with applicationElementInfo containing the real IDs.
   const earlyInit = { messageName:'applicationInit', documentId:'', workspaceId:'', elementId:'' };
-  console.log('[MFG v1.11] DOMContentLoaded — sending early applicationInit');
+  console.log('[MFG v1.13] DOMContentLoaded — sending early applicationInit');
   try{ window.parent.postMessage(earlyInit, '*'); }
-  catch(e){ console.warn('[MFG v1.11] Early postMessage failed:', e); }
+  catch(e){ console.warn('[MFG v1.13] Early postMessage failed:', e); }
 
   // 3. Also register the full message handler immediately so we don't miss a fast reply.
   //    (initOnShape will call this again later; the duplicate addEventListener is harmless
@@ -308,12 +309,9 @@ function switchTab(name){
 }
 
 // ── ONSHAPE INIT ──
-// PRIMARY path: OnShape injects documentId/workspaceId/elementId directly into the
-// Action URL as {$documentId} etc. (set this in the dev portal — see README).
-// postMessage / applicationInit is kept as a secondary fallback for cases where
-// URL params aren't present, but it's NOT the primary mechanism anymore because
-// GitHub Pages (github.io) is not in OnShape's frame-src CSP allowlist, which
-// silences postMessage communication entirely.
+// OnShape injects all context directly into the Action URL as {$param} tokens.
+// postMessage is blocked by OnShape's CSP for non-allowlisted domains, so URL
+// params are the only reliable way to get document context AND part selection.
 function initOnShape(){
   const p = new URLSearchParams(window.location.search);
 
@@ -322,27 +320,28 @@ function initOnShape(){
   wvmType   = p.get('versionId') ? 'v' : 'w';
   elementId = p.get('elementId') || '';
 
-  console.log('[MFG v1.11] initOnShape — URL params:', {docId, wvmType, wvmId, elementId});
+  // {$selectedPartIds} is a comma-separated list of part IDs selected in the viewport
+  // when the user clicks the panel icon. Snapshot on load — not live.
+  const selectedParam = p.get('selectedPartIds') || '';
+  studioSelectedIds = selectedParam ? selectedParam.split(',').filter(Boolean) : [];
+
+  console.log('[MFG v1.13] initOnShape — URL params:', {docId, wvmType, wvmId, elementId, selectedCount: studioSelectedIds.length});
 
   if(docId && wvmId && elementId){
-    // ✓ Got full context from URL params — this is the happy path.
-    // No postMessage needed. Load parts immediately.
-    console.log('[MFG v1.11] Full context from URL params — loading parts directly');
     document.getElementById('doc-label').textContent = docId.substring(0,8)+'...';
     document.getElementById('doc-info').textContent  = 'doc: '+docId.substring(0,12)+'…';
+
+    // If parts were pre-selected in viewport, show banner immediately
+    if(studioSelectedIds.length > 0){
+      document.getElementById('sel-banner-text').textContent =
+        `${studioSelectedIds.length} part${studioSelectedIds.length!==1?'s':''} selected in Part Studio`;
+      document.getElementById('selection-banner').classList.add('visible');
+    }
+
     loadParts();
-    // Still send applicationInit so OnShape sends SELECTION events for live selection
-    try{ window.parent.postMessage({messageName:'applicationInit',documentId:docId,workspaceId:wvmId,elementId:elementId},'*'); }
-    catch(e){}
   } else {
-    // Fallback: no URL params — try postMessage handshake.
-    // This path works when github.io IS on the CSP allowlist, or when hosted on
-    // a CSP-allowed domain (Vercel/Cloudflare). See Action URL setup in README.
-    console.warn('[MFG v1.11] No URL params — falling back to postMessage (may be blocked by CSP).');
-    console.warn('[MFG v1.11] Fix: add ?documentId={$documentId}&workspaceId={$workspaceId}&elementId={$elementId} to the Action URL in the OnShape dev portal.');
+    console.warn('[MFG v1.13] No URL params — check Action URL includes {$documentId}, {$workspaceId}, {$elementId}, {$selectedPartIds}');
     document.getElementById('doc-info').textContent = 'Waiting for document context...';
-    // postMessage listener already registered at DOMContentLoaded
-    // Retry pings are handled in launchApp()
   }
 }
 
@@ -350,7 +349,7 @@ function initOnShape(){
 function handleOnShapeMessage(e){
   // Log ALL incoming messages so you can see exactly what OnShape sends
   // Check the browser console (right-click → Inspect in the OnShape right panel)
-  console.log('[MFG v1.11] postMessage received:', {
+  console.log('[MFG v1.13] postMessage received:', {
     origin: e.origin,
     messageName: e.data?.messageName,
     data: e.data
@@ -359,7 +358,7 @@ function handleOnShapeMessage(e){
   // In production the origin will be https://cad.onshape.com.
   // During dev/caching it may arrive from a slightly different origin — warn but don't drop.
   if(e.origin !== 'https://cad.onshape.com'){
-    console.warn('[MFG v1.11] Unexpected origin (ignoring for doc-context only):', e.origin);
+    console.warn('[MFG v1.13] Unexpected origin (ignoring for doc-context only):', e.origin);
     // Still allow document-context messages through — OnShape embedded frames can
     // send from subtly different origins depending on region/proxy.
   }
@@ -373,7 +372,7 @@ function handleOnShapeMessage(e){
     case 'documentInfo':
     case 'applicationInfo':
     case 'contextUpdate':
-      console.log('[MFG v1.11] Document context received:', msg);
+      console.log('[MFG v1.13] Document context received:', msg);
       docId      = msg.documentId  || docId;
       wvmId      = msg.workspaceId || msg.wvmId || wvmId;
       elementId  = msg.elementId   || elementId;
@@ -387,7 +386,7 @@ function handleOnShapeMessage(e){
 
     // OnShape sends uppercase 'SELECTION' for right-panel selection events
     case 'SELECTION':
-      console.log('[MFG v1.11] Selection event:', msg.selection);
+      console.log('[MFG v1.13] Selection event:', msg.selection);
       if(msg.selection && Array.isArray(msg.selection)){
         const ids = msg.selection
           .filter(s => s.entityType==='PART' || s.objectType==='PART')
@@ -399,7 +398,7 @@ function handleOnShapeMessage(e){
 
     default:
       // Log unknown message names — helps identify what OnShape actually sends
-      console.log('[MFG v1.11] Unhandled messageName:', msg.messageName, msg);
+      console.log('[MFG v1.13] Unhandled messageName:', msg.messageName, msg);
   }
 }
 
@@ -471,9 +470,9 @@ function loadDemoParts(){
 
 // ── PARTS LIST ──
 function renderParts(data){
-  parts=data; selected.clear(); updateSelCount();
+  parts=data; selected.clear();
   const list=document.getElementById('part-list');
-  if(!parts.length){list.innerHTML='<div class="empty-state">No parts found.</div>';return;}
+  if(!parts.length){list.innerHTML='<div class="empty-state">No parts found.</div>';updateSelCount();return;}
   list.innerHTML='';
   parts.forEach(p=>{
     const fromStudio=studioSelectedIds.includes(p.id);
@@ -481,21 +480,32 @@ function renderParts(data){
     el.className='part-item'+(fromStudio?' from-studio':'');
     el.dataset.id=p.id;
     el.innerHTML=`
-      <input type="checkbox" id="chk-${p.id}" onchange="togglePart('${p.id}',this.checked)"/>
+      <input type="checkbox" id="chk-${p.id}" onchange="togglePart('${p.id}',this.checked)" ${fromStudio?'checked':''}/>
       <div style="flex:1;min-width:0">
         <div class="part-name">${p.name}</div>
         ${p.partNumber?`<div class="part-meta">#${p.partNumber}</div>`:''}
       </div>
       ${fromStudio
-        ? '<span class="badge" style="background:#4ade8022;color:#4ade80;border-color:#4ade8055">Selected</span>'
+        ? '<span class="badge" style="background:#4ade8022;color:#4ade80;border-color:#4ade8055">✓ Selected</span>'
         : '<span class="badge">Part</span>'}`;
     el.addEventListener('click',e=>{
       if(e.target.tagName==='INPUT') return;
       const c=document.getElementById('chk-'+p.id);
       c.checked=!c.checked; togglePart(p.id,c.checked);
     });
+    // Auto-select parts that came from viewport selection
+    if(fromStudio){
+      selected.add(p.id);
+      el.classList.add('selected');
+    }
     list.appendChild(el);
   });
+  updateSelCount();
+
+  // If parts were pre-selected from viewport, show a toast so the user knows
+  if(studioSelectedIds.length > 0 && selected.size > 0){
+    showToast(`✓ ${selected.size} part${selected.size!==1?'s':''} loaded from your viewport selection`);
+  }
 }
 function togglePart(id,checked){
   checked?selected.add(id):selected.delete(id);
@@ -559,8 +569,6 @@ function showPartForm(part,idx){
   document.getElementById('modal-body').innerHTML=`
     <label>Part Display Name <span class="required">*</span></label>
     <input type="text" id="f-name" value="${part.name}"/>
-    <label>CAD Version <span class="required">*</span></label>
-    <input type="text" id="f-cad-version" placeholder="e.g. v12, 2024-11-03"/>
     <hr class="sec-div"/>
     <label>Project <span class="required">*</span></label>
     ${renderPills('project',OPTIONS.project,'Custom project...')}
@@ -681,13 +689,13 @@ async function uploadStepToSlack(fileData, channelId, partName) {
 // ── SUBMIT ──
 function skipPart(){advanceQueue();}
 async function submitPart(){
-  const name=v('f-name'),qty=v('f-qty'),project=getPillVal('project'),cadVer=v('f-cad-version');
-  if(!name||!qty||!project||!cadVer){showToast('Fill in required fields (*)',true);return;}
+  const name=v('f-name'),qty=v('f-qty'),project=getPillVal('project');
+  if(!name||!qty||!project){showToast('Fill in required fields (*)',true);return;}
   const btn=document.getElementById('modal-next-btn');
   btn.disabled=true;
 
   const part = queue[queueIdx];
-  const payload={name,cadVersion:cadVer,project,machine:getPillVal('machine'),material:getPillVal('material'),
+  const payload={name,project,machine:getPillVal('machine'),material:getPillVal('material'),
     thickness:getPillVal('thickness'),partType:getPillVal('partType'),qty,finish:getPillVal('finish'),
     cadLink:v('f-cad-link'),fileName:attachedFile?attachedFile.name:'',student:v('f-student'),
     notes:v('f-notes'),partId:part.id};
@@ -743,7 +751,7 @@ function addToHistory(p){
   el.className='history-item';
   el.innerHTML=`
     <div class="history-item-name">${p.name}</div>
-    <div class="history-item-meta">Qty: ${p.qty} · v${p.cadVersion} · ${p.submittedAt}</div>
+    <div class="history-item-meta">Qty: ${p.qty} · ${p.submittedAt}</div>
     <div class="history-tags">${tags.map(t=>`<span class="htag">${t}</span>`).join('')}</div>`;
   list.prepend(el);
 }
