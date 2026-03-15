@@ -21,7 +21,7 @@ export default async function handler(req, res) {
       // Post the manufacturing card to Slack
       const p = payload;
       const fields = [
-        ['CAD Version', p.cadVersion], ['Project', p.project],
+        ['Project', p.project],
         ['Machine', p.machine||'TBD'], ['Material', p.material||'TBD'],
         ['Thickness', p.thickness||'TBD'], ['Type of Part', p.partType||'TBD'],
         ['Quantity', p.qty], ['Finish', p.finish||'None'],
