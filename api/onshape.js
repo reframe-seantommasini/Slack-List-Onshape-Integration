@@ -1,6 +1,6 @@
 // Vercel serverless function — proxies OnShape API calls server-side to avoid CORS.
-// GET  /api/onshape?path=/parts/d/...       → transparent proxy to cad.onshape.com
-// POST /api/onshape  { action: 'evalFeatureScript', ... } → maps entity IDs to partIds
+// GET  /api/onshape?path=/parts/d/...              → transparent proxy
+// POST /api/onshape { action: 'evalFeatureScript' } → maps entity IDs to partIds via FS
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -26,62 +26,88 @@ export default async function handler(req, res) {
     'Content-Type':  'application/json',
   };
 
-  // ── POST: special actions ──────────────────────────────────────────────────
+  // ── POST: evalFeatureScript — maps B-rep entity IDs to partIds ─────────────
   if (method === 'POST') {
     const { action } = req.body || {};
 
-    // Map B-rep entity IDs from SELECTION events to partIds via FeatureScript eval.
-    // OnShape's /parts API returns partIds like "JFD"; SELECTION events return entity
-    // IDs like "LFiqL" which are B-rep face/edge IDs. FeatureScript can bridge them.
     if (action === 'evalFeatureScript') {
       const { docId, wvmType, wvmId, elementId, entityIds } = req.body;
       if (!docId || !wvmId || !elementId || !Array.isArray(entityIds) || !entityIds.length) {
-        return res.status(400).json({ error: 'Missing required fields for evalFeatureScript' });
+        return res.status(400).json({ error: 'Missing fields for evalFeatureScript' });
       }
 
-      // FeatureScript: for each entity ID, get the part it belongs to and return its partId.
-      // transientQueries are the selectionId strings from the SELECTION event.
-      // We build a map query and return the unique set of partIds.
-      const fsScript = `
-function(context is Context, queries) {
-  var result = [];
-  for (var q in queries["entityIds"]) {
-    var entities = qTransient(q);
-    var ownerParts = qOwnerPart(entities);
-    for (var part in evaluateQuery(context, ownerParts)) {
-      var pid = getProperty(context, { "entity": part, "propertyType": PropertyType.PART_NUMBER });
-      // partId is the internal ID — use the FeatureScript id() function
-      result = append(result, identityToString(id(part)));
-    }
-  }
-  return result;
-}`;
-
-      // Actually the correct FS approach uses qTransient + the /featurescript endpoint
-      // The script receives a "queries" map from the payload
       const wvm = wvmType === 'v' ? 'v' : 'w';
       const fsUrl = `https://cad.onshape.com/api/v6/partstudios/d/${docId}/${wvm}/${wvmId}/e/${elementId}/featurescript`;
 
+      // FeatureScript: for each transient entity ID from the SELECTION event,
+      // find the owning part body and return its partId string.
+      // qTransient() accepts the selectionId string directly.
+      // Note: the script must be a valid FS function expression — no semicolons after
+      // the closing brace, no top-level statements.
+      const fsScript = [
+        'function(context is Context, queries) {',
+        '  var result = [];',
+        '  for (var eid in queries["ids"]) {',
+        '    try {',
+        '      var owner = qOwnerPart(qTransient(eid));',
+        '      for (var part in evaluateQuery(context, owner)) {',
+        '        var pid = getProperty(context, {',
+        '          "entity" : part,',
+        '          "propertyType" : PropertyType.PART_NUMBER',
+        '        });',
+        '        result = append(result, pid == undefined ? "" : pid);',
+        '      }',
+        '    } catch {',
+        '      result = append(result, "err:" ~ eid);',
+        '    }',
+        '  }',
+        '  return result;',
+        '}'
+      ].join('\n');
+
+      // queries payload: keys become the map keys inside the FS function
+      const fsPayload = {
+        script: fsScript,
+        queries: [{ key: 'ids', value: entityIds }]
+      };
+
+      let rawText = '';
       try {
         const fsResp = await fetch(fsUrl, {
           method: 'POST',
           headers: baseHeaders,
-          body: JSON.stringify({
-            script: fsScript,
-            queries: [{ key: 'entityIds', value: entityIds }]
-          })
+          body: JSON.stringify(fsPayload)
         });
 
-        const fsData = await fsResp.json();
-        console.log('[onshape proxy] FS eval response:', JSON.stringify(fsData).substring(0, 500));
+        rawText = await fsResp.text(); // always read as text first — avoids JSON parse crash
+        console.log('[onshape proxy] FS status:', fsResp.status, 'body:', rawText.substring(0, 800));
 
-        // FS returns { result: { type: 'array', value: [...] } }
-        // Each value is a string partId
+        if (!fsResp.ok) {
+          return res.status(500).json({
+            error: `FS endpoint returned ${fsResp.status}`,
+            detail: rawText.substring(0, 400)
+          });
+        }
+
+        let fsData;
+        try {
+          fsData = JSON.parse(rawText);
+        } catch(e) {
+          return res.status(500).json({ error: 'FS response is not JSON', detail: rawText.substring(0, 400) });
+        }
+
+        console.log('[onshape proxy] FS parsed:', JSON.stringify(fsData).substring(0, 600));
+
+        // The FS result comes back as { result: { type: 'array', value: [ {type:'string', value:'...'}, ... ] } }
+        // or sometimes { result: { BSType: 'BTFSValueArray', ...items } }
         let partIds = [];
-        if (fsData.result?.type === 'array') {
-          partIds = fsData.result.value
-            .map(v => v.value || v)
-            .filter(v => typeof v === 'string' && v.length > 0);
+
+        const result = fsData.result;
+        if (result) {
+          const items = result.value ?? result.items ?? [];
+          partIds = items
+            .map(v => (typeof v === 'string' ? v : (v.value ?? v.message ?? '')))
+            .filter(s => s && !s.startsWith('err:') && s.length > 0);
         }
 
         // Deduplicate
@@ -89,11 +115,14 @@ function(context is Context, queries) {
         return res.json({ ok: true, partIds, raw: fsData });
 
       } catch (err) {
-        return res.status(500).json({ error: 'FeatureScript eval failed: ' + err.message });
+        return res.status(500).json({
+          error: 'FeatureScript eval failed: ' + err.message,
+          detail: rawText.substring(0, 400)
+        });
       }
     }
 
-    // For other POST actions (e.g. translation requests), fall through to transparent proxy
+    // Other POST actions — transparent proxy
     const { path } = req.query;
     if (!path) return res.status(400).json({ error: 'Missing path param for POST proxy' });
     const upstreamUrl = `https://cad.onshape.com/api/v6${path}`;
@@ -109,8 +138,8 @@ function(context is Context, queries) {
   // ── GET: transparent proxy ─────────────────────────────────────────────────
   const { path } = req.query;
   if (!path) return res.status(400).json({ error: 'Missing path param' });
-
   const upstreamUrl = `https://cad.onshape.com/api/v6${path}`;
+
   try {
     const upstream = await fetch(upstreamUrl, { method: 'GET', headers: baseHeaders });
     const contentType = upstream.headers.get('content-type') || 'application/json';
@@ -118,12 +147,10 @@ function(context is Context, queries) {
     res.status(upstream.status);
 
     if (contentType.includes('application/json')) {
-      const data = await upstream.json();
-      return res.json(data);
+      return res.json(await upstream.json());
     } else {
       // Binary passthrough (STEP file downloads)
-      const buffer = await upstream.arrayBuffer();
-      return res.send(Buffer.from(buffer));
+      return res.send(Buffer.from(await upstream.arrayBuffer()));
     }
   } catch (err) {
     return res.status(500).json({ error: err.message });
