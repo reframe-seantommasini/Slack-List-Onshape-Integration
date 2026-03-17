@@ -449,8 +449,11 @@ function handleOnShapeMessage(e){
     case 'REQUESTED_SELECTION_HIGHLIGHT':
       console.log('[MFG v1.31] Highlight acknowledged by OnShape');
       break;
+    case 'REQUESTED_SELECTION':
+      console.log('[MFG v1.31] Selection set by OnShape');
+      break;
     case 'STOPPED_REQUEST':
-      console.log('[MFG v1.31] Highlight cleared by OnShape');
+      console.log('[MFG v1.31] Request stopped by OnShape');
       break;
     default:
       console.log('[MFG v1.31] Unhandled messageName:', msg.messageName);
@@ -726,19 +729,16 @@ function pillCustomInput(key,val){
 function getPillVal(key){return pillState[key]||'';}
 
 // ── ISOLATE / HIGHLIGHT ──
-// Right Panel extensions do NOT support 'isolate' or 'showAll' postMessages —
-// those only work in Element Tab extensions. The supported equivalent is
-// 'requestSelectionHighlight', which dims everything except the highlighted entity.
-//
-// The docs don't specify the payload shape for Part Studio context. We try two approaches:
-// 1. Mirror the SELECTION event format back (selectionId + entityType per entity)
-// 2. Fall back to occurrencePaths if no cached entity selections exist
+// requestSelectionHighlight is acknowledged but produces no visible effect in Part Studio.
+// requestSelection actually drives the yellow selection highlight in the viewport —
+// it programmatically sets OnShape's active selection, exactly as if the user clicked the part.
+// We replay the raw entity selections from the last SELECTION event for this part,
+// or fall back to sending just the partId as a body-level selection.
 function isolatePart(partId){
   if(!docId || CONFIG.demo) return;
   isIsolated = true;
 
-  // Build selections array from cached raw SELECTION data for this part
-  // Filter to only entities that belong to this partId via the face map
+  // Filter cached raw selections to only entities belonging to this part
   const entitySelections = lastRawSelections
     .filter(s => {
       const eid = s.selectionId || s.entityId;
@@ -751,41 +751,35 @@ function isolatePart(partId){
       occurrencePath: s.occurrencePath || []
     }));
 
-  // If we have entity-level data for this part, use it; otherwise fall back to body path
-  const payload = entitySelections.length > 0
-    ? {
-        messageName:  'requestSelectionHighlight',
-        documentId:    docId,
-        workspaceId:   wvmId,
-        elementId:     elementId,
-        selections:    entitySelections
-      }
-    : {
-        messageName:  'requestSelectionHighlight',
-        documentId:    docId,
-        workspaceId:   wvmId,
-        elementId:     elementId,
-        occurrencePaths: [[partId]]
-      };
+  const payload = {
+    messageName: 'requestSelection',
+    documentId:   docId,
+    workspaceId:  wvmId,
+    elementId:    elementId,
+    selections:   entitySelections.length > 0
+      ? entitySelections
+      : [{ selectionType: 'ENTITY', selectionId: partId, entityType: 'BODY', occurrencePath: [] }]
+  };
 
-  console.log('[MFG v1.31] requestSelectionHighlight payload:', JSON.stringify(payload));
+  console.log('[MFG v1.31] requestSelection payload:', JSON.stringify(payload));
   try {
     window.parent.postMessage(payload, osServer);
-  } catch(e) { console.warn('[MFG v1.31] requestSelectionHighlight failed:', e); }
+  } catch(e) { console.warn('[MFG v1.31] requestSelection failed:', e); }
 }
 function showAllParts(){
   if(!docId || CONFIG.demo) return;
   isIsolated = false;
   try {
-    // stopRequest cancels any active requestSelectionHighlight
+    // Clear the programmatic selection by sending an empty selections array
     window.parent.postMessage({
-      messageName: 'stopRequest',
+      messageName: 'requestSelection',
       documentId:   docId,
       workspaceId:  wvmId,
-      elementId:    elementId
+      elementId:    elementId,
+      selections:   []
     }, osServer);
-    console.log('[MFG v1.31] stopRequest (highlight cleared)');
-  } catch(e) { console.warn('[MFG v1.31] stopRequest failed:', e); }
+    console.log('[MFG v1.31] requestSelection cleared (empty)');
+  } catch(e) { console.warn('[MFG v1.31] requestSelection clear failed:', e); }
 }
 function toggleIsolate(){
   // Don't flip isIsolated here — isolatePart/showAllParts own the flag
