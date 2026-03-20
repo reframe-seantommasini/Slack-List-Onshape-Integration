@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Manufacturing Pipeline — FRC 6328 v1.66</title>
+<title>Manufacturing Pipeline — FRC 6328 v1.68</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
   :root {
@@ -151,7 +151,7 @@
     <div class="hdr-divider"></div>
     <span class="hdr-title">Mfg Pipeline</span>
     <span class="doc-badge" id="doc-label">No document</span>
-    <span style="font-size:.6rem;color:var(--muted);margin-left:4px;">v1.66</span>
+    <span style="font-size:.6rem;color:var(--muted);margin-left:4px;">v1.68</span>
   </header>
 
   <div id="selection-banner">
@@ -324,7 +324,7 @@ function matchMaterial(osMaterial) {
     const name = osMaterial.displayName.toLowerCase();
     for (const entry of MATERIAL_MAP) {
       if (name.includes(entry.match)) {
-        console.log(`[MFG v1.66] Auto-detected material (name): "${osMaterial.displayName}" → ${entry.label}`);
+        console.log(`[MFG v1.68] Auto-detected material (name): "${osMaterial.displayName}" → ${entry.label}`);
         return entry.label;
       }
     }
@@ -334,13 +334,13 @@ function matchMaterial(osMaterial) {
   if (osMaterial.density != null) {
     for (const entry of MATERIAL_DENSITY_MAP) {
       if (Math.abs(osMaterial.density - entry.densityKgM3) <= entry.toleranceKgM3) {
-        console.log(`[MFG v1.66] Auto-detected material (density ${osMaterial.density} kg/m³): "${osMaterial.displayName}" → ${entry.label}`);
+        console.log(`[MFG v1.68] Auto-detected material (density ${osMaterial.density} kg/m³): "${osMaterial.displayName}" → ${entry.label}`);
         return entry.label;
       }
     }
   }
 
-  console.log(`[MFG v1.66] No material match for: "${osMaterial.displayName}" density: ${osMaterial.density}`);
+  console.log(`[MFG v1.68] No material match for: "${osMaterial.displayName}" density: ${osMaterial.density}`);
   return null;
 }
 
@@ -395,11 +395,11 @@ function(context is Context, queries) {
     console.log(`[MFG autoDetect] dims (in): ${dims.map(d=>d.toFixed(4)).join(' x ')}, min: ${minDim.toFixed(4)}`);
     for (const t of PLATE_THICKNESSES_IN) {
       if (Math.abs(minDim - t.value) <= PLATE_TOLERANCE_IN) {
-        console.log(`[MFG v1.66] Auto-detected plate — min dim ${minDim.toFixed(4)}" → ${t.label}`);
+        console.log(`[MFG v1.68] Auto-detected plate — min dim ${minDim.toFixed(4)}" → ${t.label}`);
         return { partType: 'Plate', thickness: t.label };
       }
     }
-    console.log(`[MFG v1.66] No plate match — min dim: ${minDim.toFixed(4)}"`);
+    console.log(`[MFG v1.68] No plate match — min dim: ${minDim.toFixed(4)}"`);
     return null;
   } catch(e) {
     console.warn('[MFG autoDetect] FeatureScript failed:', e.message);
@@ -418,11 +418,20 @@ const TUBE_CROSS_SECTIONS = [
 const TUBE_CROSS_TOL_IN = 0.05;  // ±0.050" — accounts for end cuts and slight measurement drift
 const TUBE_MIN_LENGTH_IN = 0.75; // cross-section long axis must exceed this to distinguish from a block
 
+// Known tube wall thicknesses to snap to, in inches
+const TUBE_WALL_THICKNESSES_IN = [
+  { label: '1/16 in', value: 0.0625 },
+  { label: '0.09 in', value: 0.09   },
+  { label: '1/8 in',  value: 0.125  },
+];
+const TUBE_WALL_TOL_IN = 0.008; // +/-0.008" snap window
+
 async function autoDetectTube(part) {
-  // Returns { partType: 'Tube', tubeSize: '1 in × 2 in' } or null if no match.
-  // Reuses the same FeatureScript evBox3d path as plate detection.
-  // Plate detection must run first (and return null) before calling this — a short
-  // tube cut down to plate thickness could theoretically hit both, but plate wins.
+  // Returns { partType: 'Tube 1x2in', thickness: '0.09 in' } or null.
+  // Single FeatureScript call: gets bbox + end cap face area in one shot.
+  // Wall thickness is solved from the annulus area equation:
+  //   Rect (WxH): area = W*H - (W-2t)(H-2t)  => 4t^2 - 2t(W+H) + area = 0
+  // Takes the smaller positive root; snaps to known wall thicknesses.
   if (CONFIG.demo) return null;
   if (!docId || !wvmId || !part.studio || !part.id) return null;
   try {
@@ -430,12 +439,42 @@ async function autoDetectTube(part) {
     const script = `
 function(context is Context, queries) {
   var partQuery = qTransient("${part.id}");
-  var bbox = evBox3d(context, {
-    "topology" : partQuery,
-    "tight"    : true
-  });
-  return { "minX": bbox.minCorner[0], "minY": bbox.minCorner[1], "minZ": bbox.minCorner[2],
-           "maxX": bbox.maxCorner[0], "maxY": bbox.maxCorner[1], "maxZ": bbox.maxCorner[2] };
+
+  // Bounding box
+  var bbox = evBox3d(context, { "topology": partQuery, "tight": true });
+  var dx = abs(bbox.maxCorner[0] - bbox.minCorner[0]);
+  var dy = abs(bbox.maxCorner[1] - bbox.minCorner[1]);
+  var dz = abs(bbox.maxCorner[2] - bbox.minCorner[2]);
+
+  // Find long axis index (0=x,1=y,2=z)
+  var longAxis = 0;
+  if (dy > dx) { longAxis = 1; }
+  if (dz > (longAxis == 0 ? dx : dy)) { longAxis = 2; }
+
+  // Find an end cap face: planar face whose normal is parallel to the long axis
+  var faces = evaluateQuery(context, qOwnedByBody(qTransient("${part.id}"), EntityType.FACE));
+  var endCapArea = -1;
+  for (var face in faces)
+  {
+    try
+    {
+      var plane = evPlane(context, { "face": face });
+      var n = plane.normal;
+      var dot = abs(longAxis == 0 ? n[0] : (longAxis == 1 ? n[1] : n[2]));
+      if (dot > 0.99)
+      {
+        var area = evArea(context, { "entities": face });
+        if (area > 0) { endCapArea = area; break; }
+      }
+    }
+    catch {}
+  }
+
+  return {
+    "minX": bbox.minCorner[0], "minY": bbox.minCorner[1], "minZ": bbox.minCorner[2],
+    "maxX": bbox.maxCorner[0], "maxY": bbox.maxCorner[1], "maxZ": bbox.maxCorner[2],
+    "endCapArea": endCapArea
+  };
 }`;
     const resp = await fetch(`/api/onshape?path=${encodeURIComponent(path)}`, {
       method: 'POST',
@@ -455,29 +494,58 @@ function(context is Context, queries) {
     };
     const minX=get('minX'), minY=get('minY'), minZ=get('minZ');
     const maxX=get('maxX'), maxY=get('maxY'), maxZ=get('maxZ');
-    // Sort dims ascending: [shortest, middle, longest]
+    const endCapAreaM2 = get('endCapArea') ?? -1;
+
     const dims = [Math.abs(maxX-minX), Math.abs(maxY-minY), Math.abs(maxZ-minZ)]
       .map(m => m * 39.3701)
       .sort((a, b) => a - b);
     const [d0, d1, d2] = dims;
     console.log(`[MFG autoDetect] tube check dims (in): ${dims.map(d=>d.toFixed(4)).join(' x ')}`);
 
-    // The two smaller dims are the cross-section; largest is the length.
-    // Require the length to be meaningfully longer than the cross-section to avoid
-    // classifying solid blocks as tubes.
     if (d2 < TUBE_MIN_LENGTH_IN) return null;
 
+    let matchedCs = null;
     for (const cs of TUBE_CROSS_SECTIONS) {
-      const csMatch =
-        Math.abs(d0 - cs.d1) <= TUBE_CROSS_TOL_IN &&
-        Math.abs(d1 - cs.d2) <= TUBE_CROSS_TOL_IN;
-      if (csMatch) {
-        console.log(`[MFG v1.66] Auto-detected tube — ${d0.toFixed(3)}" × ${d1.toFixed(3)}" → ${cs.label}, length ${d2.toFixed(3)}"`);
-        return { partType: cs.label };
+      if (Math.abs(d0 - cs.d1) <= TUBE_CROSS_TOL_IN &&
+          Math.abs(d1 - cs.d2) <= TUBE_CROSS_TOL_IN) {
+        matchedCs = cs;
+        break;
       }
     }
-    console.log(`[MFG v1.66] No tube match — cross-section ${d0.toFixed(4)}" × ${d1.toFixed(4)}"`);
-    return null;
+    if (!matchedCs) {
+      console.log(`[MFG v1.68] No tube match -- cross-section ${d0.toFixed(4)}" x ${d1.toFixed(4)}"`);
+      return null;
+    }
+
+    // Solve wall thickness from end cap annulus area
+    // Quadratic: 4t^2 - 2t(W+H) + area = 0
+    let wallLabel = null;
+    if (endCapAreaM2 > 0) {
+      const areaIn2 = endCapAreaM2 * 1550.0031;
+      const W = d0, H = d1;
+      const a = 4, b = -2*(W+H), c = areaIn2;
+      const discriminant = b*b - 4*a*c;
+      if (discriminant >= 0) {
+        const t1 = (-b - Math.sqrt(discriminant)) / (2*a);
+        const t2 = (-b + Math.sqrt(discriminant)) / (2*a);
+        // Take the smaller positive root that is less than half the smaller outer dim
+        const t = (t1 > 0 && t1 < W/2) ? t1 : (t2 > 0 && t2 < W/2) ? t2 : null;
+        if (t !== null) {
+          console.log(`[MFG v1.68] End cap area ${areaIn2.toFixed(5)} in2, solved wall t=${t.toFixed(5)}"`);
+          for (const wt of TUBE_WALL_THICKNESSES_IN) {
+            if (Math.abs(t - wt.value) <= TUBE_WALL_TOL_IN) {
+              wallLabel = wt.label;
+              break;
+            }
+          }
+          if (!wallLabel) console.log(`[MFG v1.68] Wall t=${t.toFixed(5)}" did not snap to a known thickness`);
+        }
+      }
+    }
+
+    console.log(`[MFG v1.68] Auto-detected tube -- ${d0.toFixed(3)}" x ${d1.toFixed(3)}" -> ${matchedCs.label}, length ${d2.toFixed(3)}", wall: ${wallLabel ?? 'unknown'}`);
+    return { partType: matchedCs.label, thickness: wallLabel };
+
   } catch(e) {
     console.warn('[MFG autoDetect] Tube FeatureScript failed:', e.message);
     return null;
@@ -551,11 +619,11 @@ function(context is Context, queries) {
       const matchSharp   = Math.abs(d0 - p.f2f) <= HEX_SHAFT_TOL_IN && Math.abs(d1 - p.c2c_sharp)   <= HEX_SHAFT_TOL_IN;
       const matchRounded = Math.abs(d0 - p.f2f) <= HEX_SHAFT_TOL_IN && Math.abs(d1 - p.c2c_rounded) <= HEX_SHAFT_TOL_IN;
       if (matchSharp || matchRounded) {
-        console.log(`[MFG v1.66] Auto-detected Hex Shaft ${p.diameter} — ${d0.toFixed(4)}" × ${d1.toFixed(4)}", length ${d2.toFixed(3)}"`);
+        console.log(`[MFG v1.68] Auto-detected Hex Shaft ${p.diameter} — ${d0.toFixed(4)}" × ${d1.toFixed(4)}", length ${d2.toFixed(3)}"`);
         return { partType: 'Hex Shaft', thickness: p.diameter };
       }
     }
-    console.log(`[MFG v1.66] No hex shaft match — cross-section ${d0.toFixed(4)}" × ${d1.toFixed(4)}"`);
+    console.log(`[MFG v1.68] No hex shaft match — cross-section ${d0.toFixed(4)}" × ${d1.toFixed(4)}"`);
     return null;
   } catch(e) {
     console.warn('[MFG autoDetect] Hex shaft FeatureScript failed:', e.message);
@@ -608,11 +676,11 @@ function(context is Context, queries) {
     if (Math.abs(d0 - d1) > ROUND_SHAFT_TOL_IN) return null;
     for (const s of ROUND_SHAFT_DIAMETERS) {
       if (Math.abs(d0 - s.value) <= ROUND_SHAFT_TOL_IN) {
-        console.log(`[MFG v1.66] Auto-detected Round Shaft ${s.diameter} — ${d0.toFixed(4)}" dia, length ${d2.toFixed(3)}"`);
+        console.log(`[MFG v1.68] Auto-detected Round Shaft ${s.diameter} — ${d0.toFixed(4)}" dia, length ${d2.toFixed(3)}"`);
         return { partType: 'Round Shaft', thickness: s.diameter };
       }
     }
-    console.log(`[MFG v1.66] No round shaft match — diameter ~${d0.toFixed(4)}"`);
+    console.log(`[MFG v1.68] No round shaft match — diameter ~${d0.toFixed(4)}"`);
     return null;
   } catch(e) {
     console.warn('[MFG autoDetect] Round shaft FeatureScript failed:', e.message);
@@ -643,7 +711,7 @@ function launchApp(){
   // Retry at 2s and again at 4s if we still don't have a docId.
   function retryInit(label){
     if(docId) return;
-    console.log(`[MFG v1.66] ${label}: no docId yet, re-sending applicationInit`);
+    console.log(`[MFG v1.68] ${label}: no docId yet, re-sending applicationInit`);
     try{
       window.parent.postMessage({
         messageName: 'applicationInit',
@@ -651,7 +719,7 @@ function launchApp(){
         workspaceId: wvmId,
         elementId:   elementId
       }, osServer||'*');
-    }catch(e){ console.warn('[MFG v1.66] postMessage failed:', e); }
+    }catch(e){ console.warn('[MFG v1.68] postMessage failed:', e); }
   }
 
   setTimeout(()=>retryInit('2s retry'), 2000);
@@ -659,9 +727,9 @@ function launchApp(){
 
   setTimeout(()=>{
     if(!docId){
-      console.error('[MFG v1.66] Still no docId after 5s.');
-      console.error('[MFG v1.66] ROOT CAUSE: The OnShape dev portal Action URL is missing {$documentId} params.');
-      console.error('[MFG v1.66] Fix: set Action URL to include {$documentId}&workspaceId={$workspaceId}&elementId={$elementId}&selectedPartIds={$selectedPartIds}&server={$server}');
+      console.error('[MFG v1.68] Still no docId after 5s.');
+      console.error('[MFG v1.68] ROOT CAUSE: The OnShape dev portal Action URL is missing {$documentId} params.');
+      console.error('[MFG v1.68] Fix: set Action URL to include {$documentId}&workspaceId={$workspaceId}&elementId={$elementId}&selectedPartIds={$selectedPartIds}&server={$server}');
       document.getElementById('doc-info').textContent =
         '⚠️ No document context — Action URL is missing {$documentId} params. See browser console for exact fix.';
       document.getElementById('doc-label').textContent = 'Fix needed';
@@ -679,7 +747,7 @@ window.addEventListener('DOMContentLoaded', ()=>{
 
   // 1. RAW MESSAGE SPY — logs every postMessage before any filtering.
   window.addEventListener('message', e=>{
-    console.log('[MFG v1.66 RAW]', {
+    console.log('[MFG v1.68 RAW]', {
       origin: e.origin,
       messageName: e.data?.messageName,
       fullData: e.data
@@ -722,7 +790,7 @@ function initOnShape(){
   const selectedParam = p.get('selectedPartIds') || '';
   studioSelectedIds = selectedParam ? selectedParam.split(',').filter(Boolean) : [];
 
-  console.log('[MFG v1.66] initOnShape — URL params:', {docId, wvmType, wvmId, elementId, osServer, selectedCount: studioSelectedIds.length});
+  console.log('[MFG v1.68] initOnShape — URL params:', {docId, wvmType, wvmId, elementId, osServer, selectedCount: studioSelectedIds.length});
 
   if(docId && wvmId && elementId){
     document.getElementById('doc-label').textContent = docId.substring(0,8)+'...';
@@ -738,9 +806,9 @@ function initOnShape(){
       workspaceId:  wvmId,
       elementId:    elementId
     };
-    console.log('[MFG v1.66] Sending applicationInit with real IDs to', osServer);
+    console.log('[MFG v1.68] Sending applicationInit with real IDs to', osServer);
     try{ window.parent.postMessage(initMsg, osServer); }
-    catch(e){ console.warn('[MFG v1.66] applicationInit postMessage failed:', e); }
+    catch(e){ console.warn('[MFG v1.68] applicationInit postMessage failed:', e); }
 
     // ── keepAlive heartbeat ─────────────────────────────────────────────────
     // OnShape requires periodic keepAlive messages to keep the session alive
@@ -766,14 +834,14 @@ function initOnShape(){
 
     loadParts();
   } else {
-    console.warn('[MFG v1.66] No URL params — check Action URL includes {$documentId}, {$workspaceId}, {$elementId}, {$selectedPartIds}, {$server}');
+    console.warn('[MFG v1.68] No URL params — check Action URL includes {$documentId}, {$workspaceId}, {$elementId}, {$selectedPartIds}, {$server}');
     document.getElementById('doc-info').textContent = 'Waiting for document context...';
   }
 }
 
 // ── ONSHAPE MESSAGE HANDLER ──
 function handleOnShapeMessage(e){
-  console.log('[MFG v1.66] postMessage received:', {
+  console.log('[MFG v1.68] postMessage received:', {
     origin: e.origin,
     messageName: e.data?.messageName,
     data: e.data
@@ -783,7 +851,7 @@ function handleOnShapeMessage(e){
   // OnShape to trust our postMessages back. Fall back to cad.onshape.com if not set.
   const expectedOrigin = osServer || 'https://cad.onshape.com';
   if(e.origin !== expectedOrigin){
-    console.warn('[MFG v1.66] Unexpected origin (skipping):', e.origin, '— expected:', expectedOrigin);
+    console.warn('[MFG v1.68] Unexpected origin (skipping):', e.origin, '— expected:', expectedOrigin);
     return;
   }
 
@@ -794,7 +862,7 @@ function handleOnShapeMessage(e){
     case 'applicationElementInfo':
     case 'documentInfo':
     case 'applicationInfo':
-      console.log('[MFG v1.66] Doc context:', msg);
+      console.log('[MFG v1.68] Doc context:', msg);
       docId     = msg.documentId  || docId;
       wvmId     = msg.workspaceId || msg.wvmId || wvmId;
       elementId = msg.elementId   || elementId;
@@ -812,7 +880,7 @@ function handleOnShapeMessage(e){
     // This is how PenguinCAM resolves face clicks to part names without any API call.
     case 'contextUpdate':
       {
-        console.log('[MFG v1.66] contextUpdate — full message:', JSON.stringify(msg));
+        console.log('[MFG v1.68] contextUpdate — full message:', JSON.stringify(msg));
         // Update doc context if provided
         docId     = msg.documentId  || docId;
         wvmId     = msg.workspaceId || msg.wvmId || wvmId;
@@ -821,7 +889,7 @@ function handleOnShapeMessage(e){
         // selectedPartIds is the gold field — actual partIds for the selected geometry
         const ctxPartIds = msg.selectedPartIds || msg.partIds || [];
         if(Array.isArray(ctxPartIds) && ctxPartIds.length > 0){
-          console.log('[MFG v1.66] contextUpdate selectedPartIds:', ctxPartIds);
+          console.log('[MFG v1.68] contextUpdate selectedPartIds:', ctxPartIds);
           _applyResolvedIds(ctxPartIds);
         } else if(docId && !parts.length){
           loadParts();
@@ -834,7 +902,7 @@ function handleOnShapeMessage(e){
     case 'SELECTION':
       {
         const selArray = msg.selections || msg.selection || [];
-        console.log('[MFG v1.66] SELECTION — selArray length:', selArray.length,
+        console.log('[MFG v1.68] SELECTION — selArray length:', selArray.length,
           '| first entry:', JSON.stringify(selArray[0]));
         if(!Array.isArray(selArray) || selArray.length === 0){
           handleStudioSelectionChange([]);
@@ -845,7 +913,7 @@ function handleOnShapeMessage(e){
       break;
 
     default:
-      console.log('[MFG v1.66] Unhandled messageName:', msg.messageName);
+      console.log('[MFG v1.68] Unhandled messageName:', msg.messageName);
   }
 }
 
@@ -865,7 +933,7 @@ async function buildFaceMap(){
   if(faceMapLoaded || !docId || !wvmId || !elementId) return;
   try {
     const data = await onshapeFetch(`/partstudios/d/${docId}/${wvmType}/${wvmId}/e/${elementId}/bodydetails?includeVertices=true`);
-    if(!data || !data.bodies) { console.warn('[MFG v1.66] bodydetails: no bodies'); return; }
+    if(!data || !data.bodies) { console.warn('[MFG v1.68] bodydetails: no bodies'); return; }
     let faceCount = 0;
     data.bodies.forEach(body => {
       const bid = body.id;
@@ -893,17 +961,17 @@ async function buildFaceMap(){
         });
         if(minX !== Infinity) bodyBounds[bid] = { minX, minY, minZ, maxX, maxY, maxZ };
         if(Object.keys(bodyBounds).length === 1) {
-          console.log('[MFG v1.66] First vertex sample:', JSON.stringify(verts[0]));
-          console.log('[MFG v1.66] First body bounds (m):', bodyBounds[bid]);
+          console.log('[MFG v1.68] First vertex sample:', JSON.stringify(verts[0]));
+          console.log('[MFG v1.68] First body bounds (m):', bodyBounds[bid]);
         }
       }
     });
     faceMapLoaded = true;
-    console.log(`[MFG v1.66] Entity map built: ${faceCount} faces+edges across ${data.bodies.length} bodies`);
-    console.log('[MFG v1.66] Sample body IDs:', [...new Set(Object.values(faceToBodyId))].slice(0,5));
-    console.log('[MFG v1.66] bodyBounds sample:', Object.entries(bodyBounds).slice(0,2));
+    console.log(`[MFG v1.68] Entity map built: ${faceCount} faces+edges across ${data.bodies.length} bodies`);
+    console.log('[MFG v1.68] Sample body IDs:', [...new Set(Object.values(faceToBodyId))].slice(0,5));
+    console.log('[MFG v1.68] bodyBounds sample:', Object.entries(bodyBounds).slice(0,2));
   } catch(e) {
-    console.warn('[MFG v1.66] buildFaceMap failed:', e.message);
+    console.warn('[MFG v1.68] buildFaceMap failed:', e.message);
   }
 }
 
@@ -913,7 +981,7 @@ function resolveSelectionToParts(selArray){
   // Fast path: OnShape provided partId directly (body-level click)
   const directPartIds = selArray.map(s => s.partId).filter(Boolean);
   if(directPartIds.length > 0){
-    console.log('[MFG v1.66] Direct partIds from event:', directPartIds);
+    console.log('[MFG v1.68] Direct partIds from event:', directPartIds);
     _applyResolvedIds(directPartIds);
     return;
   }
@@ -924,8 +992,8 @@ function resolveSelectionToParts(selArray){
   const entityIds = selArray.map(s => s.selectionId || s.entityId).filter(Boolean);
   const resolvedBodyIds = [...new Set(entityIds.map(id => faceToBodyId[id]).filter(Boolean))];
 
-  console.log('[MFG v1.66] selectionIds:', entityIds);
-  console.log('[MFG v1.66] -> bodyIds from face map:', resolvedBodyIds);
+  console.log('[MFG v1.68] selectionIds:', entityIds);
+  console.log('[MFG v1.68] -> bodyIds from face map:', resolvedBodyIds);
 
   if(resolvedBodyIds.length > 0){
     _applyResolvedIds(resolvedBodyIds);
@@ -933,7 +1001,7 @@ function resolveSelectionToParts(selArray){
   }
 
   // Face map not loaded yet or face IDs not in map — trigger a map build and show banner
-  console.warn('[MFG v1.66] No face map match — map loaded?', faceMapLoaded, '| triggering rebuild');
+  console.warn('[MFG v1.68] No face map match — map loaded?', faceMapLoaded, '| triggering rebuild');
   buildFaceMap().then(() => {
     const retried = [...new Set(entityIds.map(id => faceToBodyId[id]).filter(Boolean))];
     if(retried.length > 0){
@@ -955,7 +1023,7 @@ function _applyResolvedIds(ids){
   document.getElementById('sel-banner-text').textContent =
     `${n} part${n!==1?'s':''} selected — tap Use Selection`;
   document.getElementById('selection-banner').classList.add('visible');
-  console.log('[MFG v1.66] studioSelectedIds:', JSON.stringify(studioSelectedIds));
+  console.log('[MFG v1.68] studioSelectedIds:', JSON.stringify(studioSelectedIds));
 }
   // Intentionally do NOT clear studioSelectedIds or hide banner on empty selection —
   // OnShape fires Array(0) events on mouse-move which would wipe the selection
@@ -986,8 +1054,8 @@ function useStudioSelection(){
 }
 function autoSelectFromStudio(){
   clearSelection();
-  console.log('[MFG v1.66] Matching studioSelectedIds:', JSON.stringify(studioSelectedIds));
-  console.log('[MFG v1.66] Available part IDs:', JSON.stringify(parts.map(p=>p.id)));
+  console.log('[MFG v1.68] Matching studioSelectedIds:', JSON.stringify(studioSelectedIds));
+  console.log('[MFG v1.68] Available part IDs:', JSON.stringify(parts.map(p=>p.id)));
 
   parts.forEach(p=>{
     const match =
@@ -1010,7 +1078,7 @@ function autoSelectFromStudio(){
     showToast(`${selected.size} part${selected.size!==1?'s':''} loaded from selection`);
   } else {
     // Last resort: if we stored raw entity IDs and nothing matched, show a helpful message
-    console.warn('[MFG v1.66] No match. studioSelectedIds were:', studioSelectedIds,
+    console.warn('[MFG v1.68] No match. studioSelectedIds were:', studioSelectedIds,
       '— these are face/edge entity IDs. OnShape does not expose a face->part mapping in the client API. ' +
       'Try clicking directly on the part body (not a face) or use the parts list on the left.');
     showToast('Select the part body (not a face/edge) — or pick from the list', true);
@@ -1031,7 +1099,7 @@ async function loadParts(){
   list.innerHTML='<div class="empty-state"><span class="spinner"></span> Loading parts...</div>';
   try{
     const data=await onshapeFetch(`/parts/d/${docId}/${wvmType}/${wvmId}/e/${elementId}`);
-    console.log('[MFG v1.66] Raw parts response sample:', JSON.stringify(data[0]));
+    console.log('[MFG v1.68] Raw parts response sample:', JSON.stringify(data[0]));
     renderParts(data.map(p=>({
       id:         p.partId,
       bodyId:     p.bodyId||'',
@@ -1174,14 +1242,17 @@ async function showPartForm(part,idx){
     if (detectedMaterial === 'PLA+') pillState['machine'] = '3D Printer';
   }
 
-  // Auto-detect powder coat color — skipped for 3D prints, which never get powder coated
-  if (detectedMaterial !== 'PLA+') {
+  // Auto-detect powder coat color — skipped for materials that never get powder coated
+  const NO_FINISH_MATERIALS = ['PLA+', 'Polycarb', 'SRPP', 'Carbon Fiber'];
+  if (NO_FINISH_MATERIALS.includes(detectedMaterial)) {
+    pillState['finish'] = 'None';
+  } else {
     const detectedFinish = matchFinishColor(part.appearance?.color, part.appearance?.isGenerated);
     if (detectedFinish) {
       pillState['finish'] = detectedFinish;
-      console.log(`[MFG v1.66] Auto-detected finish: ${detectedFinish}`, part.appearance?.color);
+      console.log(`[MFG v1.68] Auto-detected finish: ${detectedFinish}`, part.appearance?.color);
     } else {
-      console.log(`[MFG v1.66] No finish match — color:`, part.appearance?.color, `isGenerated:`, part.appearance?.isGenerated);
+      console.log(`[MFG v1.68] No finish match — color:`, part.appearance?.color, `isGenerated:`, part.appearance?.isGenerated);
     }
   }
 
@@ -1199,6 +1270,7 @@ async function showPartForm(part,idx){
     const detectedTube = await autoDetectTube(part);
     if (detectedTube) {
       pillState['partType'] = detectedTube.partType;
+      if (detectedTube.thickness) pillState['thickness'] = detectedTube.thickness;
     }
   }
 
