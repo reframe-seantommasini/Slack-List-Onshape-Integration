@@ -75,6 +75,16 @@ export default async function handler(req, res) {
       if (!data.ok) throw new Error(data.error);
       return res.json({ ok: true });
 
+    } else if (action === 'getListSchema') {
+      // Temporary helper — fetch column + option IDs for the manufacturing list.
+      // Remove this action once column mapping is wired up.
+      const listId = process.env.SLACK_LIST_ID || 'F09T4DXL3L5';
+      const resp = await fetch(`https://slack.com/api/lists.getSchema?list=${listId}`, {
+        headers: { 'Authorization': 'Bearer ' + slackToken }
+      });
+      const data = await resp.json();
+      return res.json(data);
+
     } else {
       return res.status(400).json({ error: 'Unknown action: ' + action });
     }
