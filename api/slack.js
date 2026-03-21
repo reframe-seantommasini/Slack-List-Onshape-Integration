@@ -76,11 +76,13 @@ export default async function handler(req, res) {
       return res.json({ ok: true });
 
     } else if (action === 'getListSchema') {
-      // Temporary helper — fetch column + option IDs for the manufacturing list.
+      // Temporary helper — fetches existing items to discover column_id + select option IDs.
       // Remove this action once column mapping is wired up.
       const listId = process.env.SLACK_LIST_ID || 'F09T4DXL3L5';
-      const resp = await fetch(`https://slack.com/api/lists.getSchema?list=${listId}`, {
-        headers: { 'Authorization': 'Bearer ' + slackToken }
+      const resp = await fetch('https://slack.com/api/slackLists.items.list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + slackToken },
+        body: JSON.stringify({ list_id: listId, limit: 5 })
       });
       const data = await resp.json();
       return res.json(data);
