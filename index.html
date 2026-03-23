@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Manufacturing Pipeline — FRC 6328 v1.71</title>
+<title>Manufacturing Pipeline — FRC 6328 v1.73</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
   :root {
@@ -151,7 +151,7 @@
     <div class="hdr-divider"></div>
     <span class="hdr-title">Mfg Pipeline</span>
     <span class="doc-badge" id="doc-label">No document</span>
-    <span style="font-size:.6rem;color:var(--muted);margin-left:4px;">v1.71</span>
+    <span style="font-size:.6rem;color:var(--muted);margin-left:4px;">v1.73</span>
   </header>
 
   <div id="selection-banner">
@@ -1453,14 +1453,14 @@ async function submitPart(){
       await new Promise(r=>setTimeout(r,700));
       console.log('DEMO:',payload);
     } else {
-      // 1. Post the card to Slack chat AND add a List row — in parallel
+      // 1. Post the card to Slack chat AND add to kanban board — in parallel
       btn.innerHTML='<span class="spinner"></span> Posting card...';
-      const [, listResult] = await Promise.allSettled([
+      const [, boardResult] = await Promise.allSettled([
         postToSlack(payload),
-        addToSlackList(payload)
+        addToBoard(payload)
       ]);
-      if (listResult.status === 'rejected') {
-        showToast(`⚠️ List row failed: ${listResult.reason?.message}`, true);
+      if (boardResult.status === 'rejected') {
+        showToast(`⚠️ Board sync failed: ${boardResult.reason?.message}`, true);
       }
 
       // 2. Export + upload STEP file
@@ -1509,15 +1509,16 @@ function addToHistory(p){
   list.prepend(el);
 }
 
-// ── SLACK LIST ──
-async function addToSlackList(p){
-  const resp = await fetch('/api/slack', {
+// ── BOARD SYNC ──
+// Posts card data to the Supabase-backed board API (same Vercel deployment)
+async function addToBoard(p){
+  const resp = await fetch('/api/board', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'addListItem', payload: p })
+    body: JSON.stringify({ action: 'createCard', card: p }),
   });
   const data = await resp.json();
-  if (!data.ok) throw new Error(data.error || 'List proxy error');
+  if (!data.ok) throw new Error(data.error || 'Board sync error');
   return data;
 }
 
