@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Manufacturing Board — FRC 6328 v1.82</title>
+<title>Manufacturing Board — FRC 6328 v1.84</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet"/>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
@@ -15,7 +15,6 @@
 }
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body{height:100%;overflow:hidden;}
-body.list-mode{overflow-y:auto;height:auto;}
 body{font-family:'Barlow',sans-serif;background:var(--navy-deep);color:var(--text);display:flex;flex-direction:column;}
 
 /* AUTH */
@@ -32,8 +31,7 @@ body{font-family:'Barlow',sans-serif;background:var(--navy-deep);color:var(--tex
 .btn-guest:hover{color:var(--cream);border-color:rgba(107,132,184,0.7);}
 
 /* APP */
-#app{display:none;flex-direction:column;height:100vh;overflow:hidden;}
-#app.list-mode{height:auto;min-height:100vh;overflow:visible;}
+#app{display:none;flex-direction:column;}
 header{background:var(--blue-dk);border-bottom:3px solid var(--gold);padding:10px 20px;display:flex;align-items:center;gap:14px;flex-shrink:0;box-shadow:0 4px 20px rgba(0,0,0,0.4);position:sticky;top:0;z-index:20;}
 .hdr-logo{display:flex;align-items:center;}
 .hdr-logo svg{height:38px;width:auto;display:block;border-radius:4px;}
@@ -322,7 +320,7 @@ tr:hover .lt-actions{opacity:1;}
         <select id="f-material"><option value="">—</option><option>Aluminum</option><option>Steel</option><option>SRPP</option><option>Polycarbonate</option><option>PLA+</option><option>Nylon CF</option><option>Nylon GF</option></select>
       </div>
       <div class="field"><label>Thickness</label>
-        <select id="f-thickness"><option value="">—</option><option>1/16"</option><option>1/8"</option><option>3/16"</option><option>1/4"</option><option>3/8"</option><option>1/2"</option><option>3/4"</option><option>1"</option></select>
+        <select id="f-thickness"><option value="">—</option><option>1/16"</option><option>0.09"</option><option>1/8"</option><option>3/16"</option><option>1/4"</option><option>3/8"</option><option>1/2"</option><option>3/4"</option><option>1"</option></select>
       </div>
       <div class="field"><label>Finish</label>
         <select id="f-finish"><option value="">None</option><option>Powder Coat — Blue</option><option>Powder Coat — Black</option><option>Powder Coat — Yellow</option><option>Anodize</option></select>
@@ -374,8 +372,23 @@ function setView(v) {
   document.getElementById('btn-view-list').classList.toggle('active', v === 'list');
   document.getElementById('board-kanban').style.display = v === 'kanban' ? 'flex' : 'none';
   document.getElementById('board-list').style.display   = v === 'list'   ? 'flex' : 'none';
-  document.body.classList.toggle('list-mode', v === 'list');
-  document.getElementById('app').classList.toggle('list-mode', v === 'list');
+
+  const app = document.getElementById('app');
+  if (v === 'list') {
+    document.documentElement.style.height = 'auto';
+    document.documentElement.style.overflow = 'auto';
+    document.body.style.height = 'auto';
+    document.body.style.overflow = 'auto';
+    app.style.height = 'auto';
+    app.style.overflow = 'visible';
+  } else {
+    document.documentElement.style.height = '100%';
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.height = '100%';
+    document.body.style.overflow = 'hidden';
+    app.style.height = '100vh';
+    app.style.overflow = 'hidden';
+  }
   renderCurrentView();
 }
 
@@ -403,7 +416,10 @@ function continueAsGuest() {
 }
 function showApp() {
   document.getElementById('auth-screen').style.display = 'none';
-  document.getElementById('app').style.display = 'flex';
+  const app = document.getElementById('app');
+  app.style.display = 'flex';
+  app.style.height = '100vh';
+  app.style.overflow = 'hidden';
   // Ensure correct initial display state
   document.getElementById('board-kanban').style.display = 'flex';
   document.getElementById('board-list').style.display = 'none';
@@ -504,7 +520,7 @@ function makeCardEl(card) {
   if (card.finish && card.finish !== 'None' && card.finish !== '')
     tags.push(`<span class="tag tag-finish">${card.finish.replace('Powder Coat — ','PC ')}</span>`);
   const meta = [];
-  const mat = [card.material, card.thickness].filter(Boolean).join(' · ');
+  const mat = [card.material, fmtThickness(card.thickness)].filter(Boolean).join(' · ');
   if (mat) meta.push(`<div class="card-meta-row"><strong>${mat}</strong></div>`);
   if (card.quantity) meta.push(`<div class="card-meta-row">Qty: <strong>${card.quantity}</strong></div>`);
   if (card.assigned_to) meta.push(`<div class="card-meta-row">→ <strong>${card.assigned_to}</strong></div>`);
@@ -610,7 +626,7 @@ function buildListView() {
           <td>${badge(card.machine, 'lt-badge-machine')}</td>
           <td>${badge(card.part_type, 'lt-badge-parttype')}</td>
           <td>${matHtml}</td>
-          <td>${card.thickness ? `<span class="lt-mat-thick">${esc(card.thickness)}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
+          <td>${fmtThickness(card.thickness) ? `<span class="lt-mat-thick">${esc(fmtThickness(card.thickness))}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
           <td>${finishDisplay ? `<span class="lt-badge lt-badge-finish">${esc(finishDisplay)}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
           <td><span class="lt-qty">${card.quantity || '—'}</span></td>
           <td><span class="lt-assignee">${card.assigned_to ? esc(card.assigned_to) : '—'}</span></td>
@@ -780,6 +796,11 @@ async function downloadStep(e, cardId, filename) {
 }
 
 // ── UTILS ───────────────────────────────────────────────────
+// Normalize thickness display: "1/2 in" (OnShape) → "1/2"" (board standard)
+function fmtThickness(t) {
+  if (!t) return null;
+  return t.replace(/\s*in$/i, '"');
+}
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function showLoading(on) { document.getElementById('loading').classList.toggle('show',on); }
 let toastTimer;
