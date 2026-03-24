@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Manufacturing Board — FRC 6328 v1.81</title>
+<title>Manufacturing Board — FRC 6328 v1.82</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet"/>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
@@ -15,6 +15,7 @@
 }
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body{height:100%;overflow:hidden;}
+body.list-mode{overflow-y:auto;height:auto;}
 body{font-family:'Barlow',sans-serif;background:var(--navy-deep);color:var(--text);display:flex;flex-direction:column;}
 
 /* AUTH */
@@ -32,7 +33,8 @@ body{font-family:'Barlow',sans-serif;background:var(--navy-deep);color:var(--tex
 
 /* APP */
 #app{display:none;flex-direction:column;height:100vh;overflow:hidden;}
-header{background:var(--blue-dk);border-bottom:3px solid var(--gold);padding:10px 20px;display:flex;align-items:center;gap:14px;flex-shrink:0;box-shadow:0 4px 20px rgba(0,0,0,0.4);}
+#app.list-mode{height:auto;min-height:100vh;overflow:visible;}
+header{background:var(--blue-dk);border-bottom:3px solid var(--gold);padding:10px 20px;display:flex;align-items:center;gap:14px;flex-shrink:0;box-shadow:0 4px 20px rgba(0,0,0,0.4);position:sticky;top:0;z-index:20;}
 .hdr-logo{display:flex;align-items:center;}
 .hdr-logo svg{height:38px;width:auto;display:block;border-radius:4px;}
 .hdr-divider{width:1px;height:34px;background:var(--border);}
@@ -52,7 +54,7 @@ header{background:var(--blue-dk);border-bottom:3px solid var(--gold);padding:10p
 .view-toggle-btn.active{background:var(--blue-md);color:var(--cream);}
 
 /* Filter bar */
-.filter-bar{background:var(--navy);border-bottom:1px solid var(--border);padding:8px 20px;display:flex;align-items:center;gap:10px;flex-shrink:0;flex-wrap:wrap;}
+.filter-bar{background:var(--navy);border-bottom:1px solid var(--border);padding:8px 20px;display:flex;align-items:center;gap:10px;flex-shrink:0;flex-wrap:wrap;position:sticky;top:63px;z-index:19;}
 .filter-bar label{font-family:'Barlow Condensed',sans-serif;font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);}
 .filter-select{font-family:'Barlow',sans-serif;font-size:.78rem;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:4px 8px;cursor:pointer;}
 .filter-select:focus{outline:none;border-color:var(--gold);}
@@ -99,7 +101,7 @@ header{background:var(--blue-dk);border-bottom:3px solid var(--gold);padding:10p
 .btn-step:disabled{opacity:.5;cursor:not-allowed;}
 
 /* ── LIST VIEW ─────────────────────────────────────── */
-#board-list{flex:1;overflow-y:auto;overflow-x:hidden;display:none;flex-direction:column;gap:0;padding:16px 20px;}
+#board-list{display:none;flex-direction:column;gap:0;padding:16px 20px;}
 .list-table-wrap{overflow-x:auto;}
 .list-table-wrap::-webkit-scrollbar{height:4px;}
 .list-table-wrap::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
@@ -372,6 +374,8 @@ function setView(v) {
   document.getElementById('btn-view-list').classList.toggle('active', v === 'list');
   document.getElementById('board-kanban').style.display = v === 'kanban' ? 'flex' : 'none';
   document.getElementById('board-list').style.display   = v === 'list'   ? 'flex' : 'none';
+  document.body.classList.toggle('list-mode', v === 'list');
+  document.getElementById('app').classList.toggle('list-mode', v === 'list');
   renderCurrentView();
 }
 
