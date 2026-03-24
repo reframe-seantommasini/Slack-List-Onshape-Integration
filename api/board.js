@@ -92,16 +92,18 @@ export default async function handler(req, res) {
       return res.json({ ok: true });
 
     } else if (action === 'uploadStep') {
-      // Upload a STEP file to Supabase Storage bucket 'step-files'
-      // Receives base64-encoded file, stores at step-files/{cardId}/{filename}
+      // Upload a STEP file to private Supabase Storage bucket 'step-files'
+      // Bucket must be set to PRIVATE in Supabase dashboard
+      // Files stored at: {cardId}/{filename}
       const { filename, cardId, fileBase64 } = req.body || {};
       if (!filename || !fileBase64) return res.status(400).json({ error: 'Missing filename or fileBase64' });
 
       const fileBuffer = Buffer.from(fileBase64, 'base64');
       const storagePath = `${cardId || 'unassigned'}/${filename}`;
-      const storageUrl = `${SUPABASE_URL}/storage/v1/object/step-files/${storagePath}`;
 
-      const uploadResp = await fetch(storageUrl, {
+      // Upload to private bucket
+      const uploadResp = await fetch(
+        `${SUPABASE_URL}/storage/v1/object/step-files/${storagePath}`, {
         method: 'POST',
         headers: {
           'apikey': SUPABASE_KEY,
@@ -117,9 +119,35 @@ export default async function handler(req, res) {
         return res.status(uploadResp.status).json({ error: 'Storage upload failed: ' + err });
       }
 
-      // Return the public URL
-      const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/step-files/${storagePath}`;
-      return res.json({ ok: true, url: publicUrl });
+      // Return the storage path (not a public URL — files are private)
+      // Use getStepUrl action to generate a signed URL when needed for download
+      return res.json({ ok: true, path: storagePath });
+
+    } else if (action === 'getStepUrl') {
+      // Generate a short-lived signed URL for downloading a private STEP file
+      // Signed URLs expire after 1 hour — enough time to download, not permanent exposure
+      const { path: filePath } = req.body || {};
+      if (!filePath) return res.status(400).json({ error: 'Missing path' });
+
+      const signResp = await fetch(
+        `${SUPABASE_URL}/storage/v1/object/sign/step-files/${filePath}`, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_KEY,
+          'Authorization': `Bearer ${SUPABASE_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ expiresIn: 3600 }), // 1 hour
+      });
+
+      if (!signResp.ok) {
+        const err = await signResp.text();
+        return res.status(signResp.status).json({ error: 'Signed URL failed: ' + err });
+      }
+
+      const signData = await signResp.json();
+      const signedUrl = `${SUPABASE_URL}/storage/v1${signData.signedURL}`;
+      return res.json({ ok: true, url: signedUrl });
 
     } else {
       return res.status(400).json({ error: 'Unknown action: ' + action });
