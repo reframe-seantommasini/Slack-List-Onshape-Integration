@@ -1409,8 +1409,9 @@ async function exportStepFile(part) {
 }
 
 async function uploadStepToSupabase(fileData, cardId) {
-  // Upload STEP file to Supabase Storage via /api/board proxy
-  // Returns the public URL of the uploaded file
+  // Upload STEP file to private Supabase Storage via /api/board proxy
+  // Returns the storage path (not a URL — files are private)
+  // Use getStepUrl action to generate a signed download URL when needed
   const arrayBuffer = await fileData.blob.arrayBuffer();
   const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
   const resp = await fetch('/api/board', {
@@ -1425,7 +1426,7 @@ async function uploadStepToSupabase(fileData, cardId) {
   });
   const data = await resp.json();
   if (!data.ok) throw new Error(data.error || 'Step upload error');
-  return data.url;
+  return data.path; // storage path, e.g. "card_123/Part_Name.step"
 }
 
 // ── SUBMIT ──
@@ -1469,19 +1470,19 @@ async function submitPart(){
           const fileData = await exportStepFile(part);
           if (fileData) {
             btn.innerHTML='<span class="spinner"></span> Uploading STEP...';
-            const stepUrl = await uploadStepToSupabase(fileData, cardId);
-            payload.stepFileUrl  = stepUrl;
+            const stepPath = await uploadStepToSupabase(fileData, cardId);
+            payload.stepFilePath = stepPath;
             payload.stepFileName = fileData.filename;
-            // Update card in Supabase with the STEP file URL
+            // Update card in Supabase with the STEP file storage path
             await fetch('/api/board', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 action: 'updateCard', id: cardId,
-                updates: { stepFileId: stepUrl, stepFileName: fileData.filename }
+                updates: { stepFileId: stepPath, stepFileName: fileData.filename }
               }),
             });
-            console.log(`[MFG v1.75] STEP saved to Supabase: ${stepUrl}`);
+            console.log(`[MFG v1.75] STEP saved to Supabase Storage: ${stepPath}`);
           } else {
             showToast(`⚠️ STEP export timed out for "${name}" — card saved without file`, true);
           }
