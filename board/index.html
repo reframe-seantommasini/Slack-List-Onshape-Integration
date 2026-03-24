@@ -175,6 +175,7 @@ header{background:var(--blue-dk);border-bottom:3px solid var(--gold);padding:10p
     <div class="hdr-right">
       <div class="hdr-user"><div class="hdr-user-dot"></div><span id="hdr-user">Guest</span></div>
       <button class="btn-new" onclick="openNewCardModal()">+ New Card</button>
+      <button class="btn-signout" onclick="loadCards()">↺ Refresh</button>
       <button class="btn-signout" onclick="signOut()">Sign Out</button>
     </div>
   </header>
@@ -290,6 +291,14 @@ function signOut() {
   userEmail = null; allCards = [];
 }
 function parseJwt(t) { return JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); }
+
+// Auto-launch: if no Google Client ID is configured, skip auth and load as guest
+window.addEventListener('DOMContentLoaded', () => {
+  const clientId = document.getElementById('g_id_onload')?.dataset?.client_id || '';
+  if (!clientId || clientId === 'YOUR_GOOGLE_CLIENT_ID_HERE') {
+    continueAsGuest();
+  }
+});
 
 // ── API ─────────────────────────────────────────────────────
 async function apiGet() {
