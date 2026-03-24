@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Manufacturing Pipeline — FRC 6328 v1.75</title>
+<title>Manufacturing Pipeline — FRC 6328 v1.76</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
   :root {
@@ -151,7 +151,7 @@
     <div class="hdr-divider"></div>
     <span class="hdr-title">Mfg Pipeline</span>
     <span class="doc-badge" id="doc-label">No document</span>
-    <span style="font-size:.6rem;color:var(--muted);margin-left:4px;">v1.75</span>
+    <span style="font-size:.6rem;color:var(--muted);margin-left:4px;">v1.76</span>
   </header>
 
   <div id="selection-banner">
@@ -1375,14 +1375,15 @@ async function exportStepFile(part) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       formatName: 'STEP',
-      partIds: [part.id],
-      flattenAssemblies: false,
-      yAxisIsUp: false,
-      sendCopyToForeign: false,
-      storeInDocument: false
+      partIds: part.id,        // string, not array
+      storeInDocument: false,
+      translate: true,
     })
   });
-  if (!transResp.ok) throw new Error('Translation request failed: ' + transResp.status);
+  if (!transResp.ok) {
+    const errText = await transResp.text();
+    throw new Error(`Translation request failed: ${transResp.status} — ${errText}`);
+  }
   const trans = await transResp.json();
   const translationId = trans.id;
 
