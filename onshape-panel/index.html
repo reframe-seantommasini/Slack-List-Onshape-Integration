@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Manufacturing Pipeline — FRC 6328 v1.76</title>
+<title>Manufacturing Pipeline — FRC 6328 v1.77</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
   :root {
@@ -151,7 +151,7 @@
     <div class="hdr-divider"></div>
     <span class="hdr-title">Mfg Pipeline</span>
     <span class="doc-badge" id="doc-label">No document</span>
-    <span style="font-size:.6rem;color:var(--muted);margin-left:4px;">v1.76</span>
+    <span style="font-size:.6rem;color:var(--muted);margin-left:4px;">v1.77</span>
   </header>
 
   <div id="selection-banner">
@@ -1409,10 +1409,9 @@ async function exportStepFile(part) {
   return { blob, filename: `${part.name.replace(/\s+/g,'_')}.step` };
 }
 
-async function uploadStepToSupabase(fileData, cardId) {
-  // Upload STEP file to private Supabase Storage via /api/board proxy
-  // Returns the storage path (not a URL — files are private)
-  // Use getStepUrl action to generate a signed download URL when needed
+async function uploadStepToBlob(fileData, cardId) {
+  // Upload STEP file to Vercel Blob via /api/board proxy
+  // Returns the public Blob URL
   const arrayBuffer = await fileData.blob.arrayBuffer();
   const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
   const resp = await fetch('/api/board', {
@@ -1427,7 +1426,7 @@ async function uploadStepToSupabase(fileData, cardId) {
   });
   const data = await resp.json();
   if (!data.ok) throw new Error(data.error || 'Step upload error');
-  return data.path; // storage path, e.g. "card_123/Part_Name.step"
+  return data.url; // Vercel Blob public URL
 }
 
 // ── SUBMIT ──
@@ -1471,16 +1470,16 @@ async function submitPart(){
           const fileData = await exportStepFile(part);
           if (fileData) {
             btn.innerHTML='<span class="spinner"></span> Uploading STEP...';
-            const stepPath = await uploadStepToSupabase(fileData, cardId);
-            payload.stepFilePath = stepPath;
+            const stepUrl = await uploadStepToBlob(fileData, cardId);
+            payload.stepFileUrl  = stepUrl;
             payload.stepFileName = fileData.filename;
-            // Update card in Supabase with the STEP file storage path
+            // Update card in Supabase with the Blob URL
             await fetch('/api/board', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 action: 'updateCard', id: cardId,
-                updates: { stepFileId: stepPath, stepFileName: fileData.filename }
+                updates: { stepFileUrl: stepUrl, stepFileName: fileData.filename }
               }),
             });
             console.log(`[MFG v1.75] STEP saved to Supabase Storage: ${stepPath}`);
