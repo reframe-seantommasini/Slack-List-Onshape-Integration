@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Manufacturing Board — FRC 6328 v1.99</title>
+<title>Manufacturing Board — FRC 6328 v2.00</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet"/>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
@@ -562,7 +562,7 @@ function getFiltered() {
     (!fm   || c.machine    === fm)   &&
     (!fa   || c.assigned_to === fa)  &&
     (!fmat || c.material   === fmat) &&
-    (!fthk || c.thickness  === fthk) &&
+    (!fthk || fmtThickness(c.thickness) === fthk) &&
     (!fs   || c.name.toLowerCase().includes(fs))
   ).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   document.getElementById('filter-count').textContent =
