@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Manufacturing Board — FRC 6328 v1.98</title>
+<title>Manufacturing Board — FRC 6328 v1.99</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet"/>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
@@ -252,12 +252,6 @@ tr:hover .lt-actions{opacity:1;}
     <div id="g_id_onload" data-client_id="266562169349-u5skq8phqr2v51e8jj4k1ji1g4odu5hj.apps.googleusercontent.com" data-callback="handleGoogleSignIn" data-auto_prompt="false"></div>
     <div class="g_id_signin" data-type="standard" data-shape="rectangular" data-theme="filled_blue" data-text="signin_with" data-size="large" data-logo_alignment="left"></div>
     <p class="auth-error" id="auth-error"></p>
-    <div class="auth-divider">
-      <div class="auth-divider-line"></div>
-      <span class="auth-divider-text">or</span>
-      <div class="auth-divider-line"></div>
-    </div>
-    <button class="btn-guest" onclick="continueAsGuest()">Continue as Guest</button>
   </div>
 </div>
 
@@ -490,12 +484,10 @@ function handleGoogleSignIn(response) {
     err.style.display = 'block'; return;
   }
   userEmail = p.email;
+  // Persist session so refresh doesn't require re-login
+  localStorage.setItem('mfg_user_email', p.email);
+  localStorage.setItem('mfg_user_name', p.name || p.email);
   document.getElementById('hdr-user').textContent = p.name || p.email;
-  showApp();
-}
-function continueAsGuest() {
-  userEmail = 'guest';
-  document.getElementById('hdr-user').textContent = 'Guest';
   showApp();
 }
 function showApp() {
@@ -504,13 +496,14 @@ function showApp() {
   app.style.display = 'flex';
   app.style.height = '100vh';
   app.style.overflow = 'hidden';
-  // Ensure correct initial display state
   document.getElementById('board-kanban').style.display = 'flex';
   document.getElementById('board-list').style.display = 'none';
   loadCards();
 }
 function signOut() {
   try { google.accounts.id.disableAutoSelect(); } catch(_) {}
+  localStorage.removeItem('mfg_user_email');
+  localStorage.removeItem('mfg_user_name');
   document.getElementById('auth-screen').style.display = 'flex';
   document.getElementById('app').style.display = 'none';
   userEmail = null; allCards = [];
@@ -518,8 +511,16 @@ function signOut() {
 function parseJwt(t) { return JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); }
 
 window.addEventListener('DOMContentLoaded', () => {
-  const clientId = document.getElementById('g_id_onload')?.dataset?.client_id || '';
-  if (!clientId || clientId === 'YOUR_GOOGLE_CLIENT_ID_HERE') continueAsGuest();
+  // Restore session from localStorage — no re-login needed on refresh
+  const savedEmail = localStorage.getItem('mfg_user_email');
+  const savedName  = localStorage.getItem('mfg_user_name');
+  if (savedEmail && savedEmail.endsWith('@' + ALLOWED_DOMAIN)) {
+    userEmail = savedEmail;
+    document.getElementById('hdr-user').textContent = savedName || savedEmail;
+    showApp();
+    return;
+  }
+  // No valid session — show auth screen (GSI auto-prompt will fire if user was recently signed in)
 });
 
 // ── API ─────────────────────────────────────────────────────
