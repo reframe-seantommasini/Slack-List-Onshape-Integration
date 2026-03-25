@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Manufacturing Board — FRC 6328 v2.04</title>
+<title>Manufacturing Board — FRC 6328 v2.05</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet"/>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
@@ -89,11 +89,8 @@ header{background:var(--blue-dk);border-bottom:3px solid var(--gold);padding:10p
 .tag-project{background:rgba(239,171,40,.12);color:var(--gold);border-color:rgba(239,171,40,.25);}
 .tag-machine{background:rgba(68,108,227,.12);color:#7fa8f5;border-color:rgba(68,108,227,.25);}
 .tag-parttype{background:rgba(52,211,153,.1);color:#34d399;border-color:rgba(52,211,153,.2);}
-.tag-finish-blue{background:rgba(0,61,185,.18);color:#6fa3f7;border-color:rgba(0,61,185,.4);}
-.tag-finish-black{background:rgba(64,64,64,.25);color:#b0b0b0;border-color:rgba(180,180,180,.3);}
-.tag-finish-yellow{background:rgba(250,203,67,.15);color:#f0c030;border-color:rgba(250,203,67,.4);}
-.tag-finish-pink{background:rgba(255,105,180,.15);color:#ff85c0;border-color:rgba(255,105,180,.4);}
-.tag-finish-other{background:rgba(192,132,252,.1);color:#c084fc;border-color:rgba(192,132,252,.2);}
+.tag-finish{background:rgba(180,180,180,.1);color:#a0a0a0;border-color:rgba(180,180,180,.22);display:inline-flex;align-items:center;gap:5px;}
+.tag-finish .pc-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;display:inline-block;}
 .card-meta{display:flex;flex-direction:column;gap:2px;}
 .card-meta-row{font-size:.7rem;color:var(--muted);}
 .card-meta-row strong{color:var(--text);font-weight:600;}
@@ -144,11 +141,8 @@ header{background:var(--blue-dk);border-bottom:3px solid var(--gold);padding:10p
 .lt-badge{font-family:'Barlow Condensed',sans-serif;font-size:.65rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 8px;border-radius:99px;border:1px solid;white-space:nowrap;display:inline-block;}
 .lt-badge-machine{background:rgba(68,108,227,.12);color:#7fa8f5;border-color:rgba(68,108,227,.3);}
 .lt-badge-project{background:rgba(239,171,40,.1);color:var(--gold);border-color:rgba(239,171,40,.25);}
-.lt-badge-finish-blue{background:rgba(0,61,185,.18);color:#6fa3f7;border-color:rgba(0,61,185,.4);}
-.lt-badge-finish-black{background:rgba(64,64,64,.25);color:#b0b0b0;border-color:rgba(180,180,180,.3);}
-.lt-badge-finish-yellow{background:rgba(250,203,67,.15);color:#f0c030;border-color:rgba(250,203,67,.4);}
-.lt-badge-finish-pink{background:rgba(255,105,180,.15);color:#ff85c0;border-color:rgba(255,105,180,.4);}
-.lt-badge-finish-other{background:rgba(192,132,252,.1);color:#c084fc;border-color:rgba(192,132,252,.2);}
+.lt-badge-finish{background:rgba(180,180,180,.1);color:#a0a0a0;border-color:rgba(180,180,180,.22);display:inline-flex;align-items:center;gap:5px;}
+.lt-badge-finish .pc-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;display:inline-block;}
 .lt-badge-parttype{background:rgba(52,211,153,.08);color:#34d399;border-color:rgba(52,211,153,.2);}
 .lt-cad a{font-size:.68rem;color:var(--gold);text-decoration:none;}
 .lt-cad a:hover{text-decoration:underline;}
@@ -623,8 +617,11 @@ function makeCardEl(card) {
   const _finish = fmtFinish(card.finish);
   if (_finish) {
     const _fraw = (card.finish || '').replace('Powder Coat — ', '').toLowerCase();
-    const _fclass = ['blue','black','yellow','pink'].includes(_fraw) ? `tag-finish-${_fraw}` : 'tag-finish-other';
-    tags.push(`<span class="tag ${_fclass}">${_finish.replace('Powder Coat — ','PC ')}</span>`);
+    const _dotColors = { blue:'#4d8fff', black:'#404040', yellow:'#FACB43', pink:'#FF69B4' };
+    const _dotColor = _dotColors[_fraw];
+    const _dotHtml = _dotColor ? `<span class="pc-dot" style="background:${_dotColor};${_fraw==='black'?'outline:1px solid rgba(255,255,255,.2);outline-offset:0;':''}"></span>` : '';
+    const _label = _finish.replace('Powder Coat — ','PC ');
+    tags.push(`<span class="tag tag-finish">${_dotHtml}${_label}</span>`);
   }
   const meta = [];
   const mat = [card.material, fmtThickness(card.thickness)].filter(Boolean).join(' · ');
@@ -726,7 +723,9 @@ function buildListView() {
 
         const finishDisplay = fmtFinish(card.finish) ? fmtFinish(card.finish).replace('Powder Coat — ', 'PC ') : null;
           const _ffc = (card.finish || '').replace('Powder Coat — ', '').toLowerCase();
-          const _ffclass = ['blue','black','yellow','pink'].includes(_ffc) ? `lt-badge lt-badge-finish-${_ffc}` : 'lt-badge lt-badge-finish-other';
+          const _fDotColors = { blue:'#4d8fff', black:'#404040', yellow:'#FACB43', pink:'#FF69B4' };
+          const _fDot = _fDotColors[_ffc] ? `<span class="pc-dot" style="width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0;background:${_fDotColors[_ffc]};${_ffc==='black'?'outline:1px solid rgba(255,255,255,.2);':''}"></span>` : '';
+          const _ffBadge = finishDisplay ? `<span class="lt-badge lt-badge-finish" style="display:inline-flex;align-items:center;gap:5px;">${_fDot}${esc(finishDisplay)}</span>` : '<span style="color:var(--muted)">—</span>';
 
         const stepHtml = card.step_file_url
           ? `<button class="lt-step-btn" onclick="downloadStep(event,'${card.id}','${esc(card.step_file_name||card.step_file_url)}')">⬇ STEP</button>`
@@ -749,7 +748,7 @@ function buildListView() {
           <td>${badge(fmtPartType(card.part_type), 'lt-badge-parttype')}</td>
           <td>${matHtml}</td>
           <td>${fmtThickness(card.thickness) ? `<span class="lt-mat-thick">${esc(fmtThickness(card.thickness))}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
-          <td>${finishDisplay ? `<span class="${_ffclass}">${esc(finishDisplay)}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
+          <td>${_ffBadge}</td>
           <td><span class="lt-qty">${card.quantity || '—'}</span></td>
           <td><span class="lt-assignee">${card.assigned_to ? esc(card.assigned_to) : '—'}</span></td>
           <td>${card.notes ? `<span class="lt-notes" title="${esc(card.notes)}">${esc(card.notes)}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
