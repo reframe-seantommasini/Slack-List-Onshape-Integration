@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Manufacturing Pipeline — FRC 6328 v1.77</title>
+<title>Manufacturing Pipeline — FRC 6328 v1.78</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
   :root {
@@ -151,7 +151,7 @@
     <div class="hdr-divider"></div>
     <span class="hdr-title">Mfg Pipeline</span>
     <span class="doc-badge" id="doc-label">No document</span>
-    <span style="font-size:.6rem;color:var(--muted);margin-left:4px;">v1.77</span>
+    <span style="font-size:.6rem;color:var(--muted);margin-left:4px;">v1.78</span>
   </header>
 
   <div id="selection-banner">
@@ -1327,27 +1327,32 @@ async function showPartForm(part,idx){
     <hr class="sec-div"/>
     <label>Link to CAD</label>
     <input type="url" id="f-cad-link" value="${cadLink}" placeholder="https://cad.onshape.com/documents/..."/>
-    <label>Drawing / Part File (.step, .pdf, .dxf)</label>
-    <div class="file-drop" id="file-drop" onclick="document.getElementById('f-file').click()" ondragover="fileDragOver(event)" ondrop="fileDrop(event)">
-      <input type="file" id="f-file" accept=".step,.stp,.pdf,.dxf,.dwg" onchange="fileSelected(this)"/>
-      <span id="file-drop-label">📎 Click or drag to attach a file</span>
-      <div class="file-name" id="file-name-display"></div>
-    </div>
     <label>Assigned Student</label>
     <input type="text" id="f-student" placeholder="e.g. Sean Tommasini"/>
     <label>Details / Notes</label>
     <textarea id="f-notes" placeholder="Special instructions, tolerances, references..."></textarea>
     <hr class="sec-div"/>
     <label>Status <span class="required">*</span></label>
-    <select id="f-status">
+    <select id="f-status" onchange="onStatusChange(this.value)">
       <option value="">— Select a status —</option>
       ${OPTIONS.status.map(s=>`<option value="${s}">${s}</option>`).join('')}
     </select>
+    <div id="pdf-upload-section" style="display:none;margin-top:14px;">
+      <label style="margin-top:0;">Drawing PDF <span style="color:#4ade80;font-size:.7rem;font-weight:400;text-transform:none;letter-spacing:0;">Required for manual machining</span></label>
+      <div class="file-drop" id="file-drop" onclick="document.getElementById('f-file').click()" ondragover="fileDragOver(event)" ondrop="fileDrop(event)">
+        <input type="file" id="f-file" accept=".pdf" onchange="fileSelected(this)"/>
+        <span id="file-drop-label">📄 Click or drag to attach drawing PDF</span>
+        <div class="file-name" id="file-name-display"></div>
+      </div>
+    </div>
   `;
   document.getElementById('modal-overlay').classList.add('open');
   document.getElementById('modal-next-btn').textContent=idx===queue.length-1?'✓ Submit':'Submit & Next →';
   // Pre-select status dropdown if auto-detected (must happen after innerHTML is set)
-  if (pillState['status']) document.getElementById('f-status').value = pillState['status'];
+  if (pillState['status']) {
+    document.getElementById('f-status').value = pillState['status'];
+    onStatusChange(pillState['status']);
+  }
 }
 
 // ── FILE ──
@@ -1357,7 +1362,17 @@ function fileDrop(e){e.preventDefault();document.getElementById('file-drop').cla
 function setFile(file){
   attachedFile=file;
   document.getElementById('file-name-display').textContent=`✓ ${file.name} (${(file.size/1024).toFixed(1)} KB)`;
-  document.getElementById('file-drop-label').textContent='📎 Click or drag to change file';
+  document.getElementById('file-drop-label').textContent='📄 Click or drag to change file';
+}
+
+function onStatusChange(status){
+  // Show PDF upload section only for manual machining statuses
+  const pdfSection = document.getElementById('pdf-upload-section');
+  if (!pdfSection) return;
+  const needsPdf = PDF_STATUSES.has(status);
+  pdfSection.style.display = needsPdf ? 'block' : 'none';
+  // Clear attached file if switching away from a PDF status
+  if (!needsPdf) { attachedFile = null; }
 }
 
 // ── STEP EXPORT ──
@@ -1429,9 +1444,32 @@ async function uploadStepToBlob(fileData, cardId) {
   return data.url; // Vercel Blob public URL
 }
 
+async function uploadPdfToBlob(file, cardId) {
+  // Upload PDF drawing to Vercel Blob via /api/board proxy
+  // Returns the public Blob URL
+  const arrayBuffer = await file.arrayBuffer();
+  const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+  const resp = await fetch('/api/board', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'uploadPdf',
+      filename: file.name,
+      cardId,
+      fileBase64: base64,
+    }),
+  });
+  const data = await resp.json();
+  if (!data.ok) throw new Error(data.error || 'PDF upload error');
+  return data.url;
+}
+
 // ── SUBMIT ──
 // Statuses that require a STEP file export (CNC/laser only)
 const STEP_STATUSES = new Set(['Needs CAM', 'Needs Slicing']);
+
+// Statuses where students should attach a PDF drawing (manual machining)
+const PDF_STATUSES = new Set(['Ready for Lathe', 'Ready for Mill', 'Ready for CNC Mill']);
 
 function skipPart(){advanceQueue();}
 async function submitPart(){
@@ -1462,7 +1500,7 @@ async function submitPart(){
       }
       const cardId = cardResult?.card?.id || null;
 
-      // 2. Export + upload STEP to Supabase Storage — only for CNC/laser parts
+      // 2. Export + upload STEP — only for CNC/laser parts
       const needsStep = STEP_STATUSES.has(status);
       if (needsStep && cardId) {
         btn.innerHTML='<span class="spinner"></span> Exporting STEP...';
@@ -1473,8 +1511,8 @@ async function submitPart(){
             const stepUrl = await uploadStepToBlob(fileData, cardId);
             payload.stepFileUrl  = stepUrl;
             payload.stepFileName = fileData.filename;
-            // Update card in Supabase with the Blob URL
-            await fetch('/api/board', {
+            // Update card with STEP URL — await + check response so failures surface
+            const updateResp = await fetch('/api/board', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -1482,18 +1520,45 @@ async function submitPart(){
                 updates: { stepFileUrl: stepUrl, stepFileName: fileData.filename }
               }),
             });
-            console.log(`[MFG v1.75] STEP saved to Supabase Storage: ${stepPath}`);
+            const updateData = await updateResp.json();
+            if (!updateData.ok) console.error('[MFG v1.78] updateCard (STEP) failed:', updateData.error);
+            else console.log(`[MFG v1.78] STEP saved: ${stepUrl}`);
           } else {
             showToast(`⚠️ STEP export timed out for "${name}" — card saved without file`, true);
           }
         } catch(stepErr) {
-          console.warn('[MFG v1.75] STEP export failed:', stepErr.message);
+          console.warn('[MFG v1.78] STEP export failed:', stepErr.message);
           showToast(`⚠️ STEP export failed for "${name}": ${stepErr.message}`, true);
         }
       } else if (needsStep && !cardId) {
-        console.warn('[MFG v1.75] No cardId returned — skipping STEP upload');
+        console.warn('[MFG v1.78] No cardId returned — skipping STEP upload');
       } else {
-        console.log(`[MFG v1.75] Skipping STEP — status "${status}" does not require it`);
+        console.log(`[MFG v1.78] Skipping STEP — status "${status}" does not require it`);
+      }
+
+      // 3. Upload PDF drawing — only for manual machining statuses
+      const needsPdf = PDF_STATUSES.has(status);
+      if (needsPdf && attachedFile && attachedFile.name.toLowerCase().endsWith('.pdf') && cardId) {
+        btn.innerHTML='<span class="spinner"></span> Uploading PDF...';
+        try {
+          const pdfUrl = await uploadPdfToBlob(attachedFile, cardId);
+          payload.pdfFileUrl  = pdfUrl;
+          payload.pdfFileName = attachedFile.name;
+          const updateResp = await fetch('/api/board', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'updateCard', id: cardId,
+              updates: { pdfFileUrl: pdfUrl, pdfFileName: attachedFile.name }
+            }),
+          });
+          const updateData = await updateResp.json();
+          if (!updateData.ok) console.error('[MFG v1.78] updateCard (PDF) failed:', updateData.error);
+          else console.log(`[MFG v1.78] PDF saved: ${pdfUrl}`);
+        } catch(pdfErr) {
+          console.warn('[MFG v1.78] PDF upload failed:', pdfErr.message);
+          showToast(`⚠️ PDF upload failed for "${name}": ${pdfErr.message}`, true);
+        }
       }
     }
 
