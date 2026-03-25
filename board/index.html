@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Manufacturing Board — FRC 6328 v1.96</title>
+<title>Manufacturing Board — FRC 6328 v1.97</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet"/>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
@@ -31,7 +31,7 @@ body{font-family:'Barlow',sans-serif;background:var(--navy-deep);color:var(--tex
 .btn-guest:hover{color:var(--cream);border-color:rgba(107,132,184,0.7);}
 
 /* APP */
-#app{display:none;flex-direction:column;}
+#app{display:none;flex-direction:column;height:100vh;}
 header{background:var(--blue-dk);border-bottom:3px solid var(--gold);padding:10px 20px;display:flex;align-items:center;gap:14px;flex-shrink:0;box-shadow:0 4px 20px rgba(0,0,0,0.4);position:sticky;top:0;z-index:20;}
 .hdr-logo{display:flex;align-items:center;}
 .hdr-logo svg{height:38px;width:auto;display:block;border-radius:4px;}
@@ -63,7 +63,7 @@ header{background:var(--blue-dk);border-bottom:3px solid var(--gold);padding:10p
 .filter-search-wrap::before{content:'⌕';position:absolute;left:8px;color:var(--muted);font-size:.9rem;pointer-events:none;}
 
 /* ── KANBAN ────────────────────────────────────────── */
-#board-kanban{flex:1;overflow-x:auto;overflow-y:hidden;display:flex;gap:10px;padding:16px 20px;align-items:flex-start;}
+#board-kanban{flex:1;overflow-x:auto;overflow-y:auto;display:flex;gap:10px;padding:16px 20px;align-items:flex-start;min-height:0;}
 #board-kanban::-webkit-scrollbar{height:5px;}
 #board-kanban::-webkit-scrollbar-track{background:transparent;}
 #board-kanban::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
@@ -106,7 +106,7 @@ header{background:var(--blue-dk);border-bottom:3px solid var(--gold);padding:10p
 .btn-pdf:disabled{opacity:.5;cursor:not-allowed;}
 
 /* ── LIST VIEW ─────────────────────────────────────── */
-#board-list{display:none;flex-direction:column;gap:0;padding:16px 20px;}
+#board-list{display:none;flex-direction:column;gap:0;padding:16px 20px;flex:1;overflow-y:auto;min-height:0;}
 .list-table-wrap{overflow-x:auto;}
 .list-table-wrap::-webkit-scrollbar{height:4px;}
 .list-table-wrap::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
