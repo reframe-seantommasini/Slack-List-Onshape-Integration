@@ -60,7 +60,7 @@ export default async function handler(req, res) {
           ${c.pdfFileUrl   || null},
           ${c.pdfFileName  || null},
           ${c.partId      || null},
-          ${c.submittedBy || null}
+          ${c.submittedBy || c.student || null}
         )
         RETURNING *
       `;
