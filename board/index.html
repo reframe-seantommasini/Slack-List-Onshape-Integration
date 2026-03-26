@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Manufacturing Board — FRC 6328 v2.10</title>
+<title>Manufacturing Board — FRC 6328 v2.11</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet"/>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
@@ -68,10 +68,9 @@ header{background:var(--blue-dk);border-bottom:3px solid var(--gold);padding:10p
 #board-kanban::-webkit-scrollbar-track{background:transparent;}
 #board-kanban::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:3px;}
 #board-kanban::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.18);}
-.col{flex-shrink:0;width:230px;display:flex;flex-direction:column;gap:0;max-height:100%;overflow-y:auto;border-radius:8px;}
-.col::-webkit-scrollbar{width:3px;}
-.col::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:3px;}
-.col-head{display:flex;align-items:center;gap:7px;background:var(--col-bg);border:1px solid var(--border);border-radius:8px 8px 0 0;padding:7px 10px;position:sticky;top:0;z-index:2;}
+.col{flex-shrink:0;width:230px;display:flex;flex-direction:column;gap:0;max-height:100%;overflow-y:auto;border-radius:8px;scrollbar-width:none;}
+.col::-webkit-scrollbar{display:none;}
+.col-head{display:flex;align-items:center;gap:7px;background:var(--col-bg);border:1px solid var(--border);border-radius:8px;padding:7px 10px;position:sticky;top:0;z-index:2;margin-bottom:8px;}
 .col-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
 .col-name{font-family:'Barlow Condensed',sans-serif;font-size:.75rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--cream);flex:1;}
 .col-count{font-family:'Barlow Condensed',sans-serif;font-size:.68rem;font-weight:700;color:var(--muted);background:var(--navy);padding:1px 6px;border-radius:99px;border:1px solid var(--border);}
