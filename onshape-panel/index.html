@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Manufacturing Pipeline — FRC 6328 v1.80</title>
+<title>Manufacturing Pipeline — FRC 6328 v1.81</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
   :root {
@@ -95,6 +95,13 @@
   textarea{resize:vertical;min-height:70px;}
   .required{color:#ef4444;}
   .pill-group{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;}
+  .critical-toggle{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--input-bg);cursor:pointer;user-select:none;margin-top:14px;transition:border-color .15s;}
+  .critical-toggle:hover{border-color:rgba(226,75,74,.5);}
+  .critical-toggle.on{border-color:#e24b4a;background:rgba(226,75,74,.08);}
+  .critical-dot{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--muted);flex-shrink:0;transition:all .15s;}
+  .critical-toggle.on .critical-dot{background:#e24b4a;border-color:#e24b4a;}
+  .critical-toggle-lbl{font-family:'Barlow Condensed',sans-serif;font-size:.78rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
+  .critical-toggle.on .critical-toggle-lbl{color:#e24b4a;}
   .pill{padding:4px 12px;border-radius:99px;border:1px solid var(--border);background:var(--input-bg);color:var(--muted);font-family:'Barlow Condensed',sans-serif;font-size:.78rem;font-weight:600;letter-spacing:.04em;cursor:pointer;transition:all .12s;user-select:none;}
   .pill:hover{border-color:var(--gold);color:var(--cream);}
   .pill.active{background:var(--gold);border-color:var(--gold);color:var(--navy);}
@@ -151,7 +158,7 @@
     <div class="hdr-divider"></div>
     <span class="hdr-title">Mfg Pipeline</span>
     <span class="doc-badge" id="doc-label">No document</span>
-    <span style="font-size:.6rem;color:var(--muted);margin-left:4px;">v1.80</span>
+    <span style="font-size:.6rem;color:var(--muted);margin-left:4px;">v1.81</span>
   </header>
 
   <div id="selection-banner">
@@ -1331,6 +1338,10 @@ async function showPartForm(part,idx){
     <input type="text" id="f-student" placeholder="e.g. Sean Tommasini" value="${localStorage.getItem('mfg_student_name')||''}"/>
     <label>Details / Notes</label>
     <textarea id="f-notes" placeholder="Special instructions, tolerances, references..."></textarea>
+    <div class="critical-toggle" id="f-critical" onclick="this.classList.toggle('on')">
+      <div class="critical-dot"></div>
+      <span class="critical-toggle-lbl">Mark as Critical</span>
+    </div>
     <hr class="sec-div"/>
     <label>Status <span class="required">*</span></label>
     <select id="f-status" onchange="onStatusChange(this.value)">
@@ -1496,8 +1507,10 @@ async function submitPart(){
   const payload={name,project,machine:getPillVal('machine'),material:getPillVal('material'),
     thickness:getPillVal('thickness'),partType:getPillVal('partType'),qty,finish:getPillVal('finish'),
     status,cadLink:v('f-cad-link'),fileName:attachedFile?attachedFile.name:'',student:v('f-student'),
-    submittedBy:v('f-student'),notes:v('f-notes'),partId:part.id};
+    submittedBy:v('f-student'),notes:v('f-notes'),partId:part.id,
+    isCritical:document.getElementById('f-critical').classList.contains('on')};
   if(v('f-student')) localStorage.setItem('mfg_student_name', v('f-student'));
+  document.getElementById('f-critical').classList.remove('on');
 
   try{
     if(CONFIG.demo){
