@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Manufacturing Board — FRC 6328 v2.12</title>
+<title>Manufacturing Board — FRC 6328 v2.13</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet"/>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
@@ -77,6 +77,17 @@ header{background:var(--blue-dk);border-bottom:3px solid var(--gold);padding:10p
 .col-cards{display:flex;flex-direction:column;gap:7px;min-height:48px;border-radius:0 0 8px 8px;padding:6px;transition:background .15s;}
 .col-cards.drag-over{background:rgba(68,108,227,0.1);outline:1px dashed rgba(68,108,227,0.4);outline-offset:-3px;}
 .card{background:var(--card-bg);border:1px solid var(--border);border-radius:9px;padding:10px 11px;cursor:grab;position:relative;transition:border-color .15s,box-shadow .15s,transform .1s;}
+.card.is-critical{border-color:rgba(226,75,74,.5);padding-top:0;}
+.card.is-critical:hover{border-color:#e24b4a;}
+.critical-ribbon{background:#e24b4a;color:#fff;font-size:.62rem;font-weight:700;font-family:'Barlow Condensed',sans-serif;letter-spacing:.1em;text-transform:uppercase;padding:3px 11px;margin:0 -11px 9px -11px;border-radius:8px 8px 0 0;display:flex;align-items:center;gap:5px;}
+.critical-ribbon-dot{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.7);flex-shrink:0;}
+.critical-toggle{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:7px;border:1px solid var(--border);background:var(--input-bg);cursor:pointer;user-select:none;transition:border-color .15s;}
+.critical-toggle:hover{border-color:rgba(226,75,74,.5);}
+.critical-toggle.on{border-color:#e24b4a;background:rgba(226,75,74,.08);}
+.critical-toggle-dot{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--muted);transition:all .15s;flex-shrink:0;}
+.critical-toggle.on .critical-toggle-dot{background:#e24b4a;border-color:#e24b4a;}
+.critical-toggle-label{font-size:.78rem;font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);}
+.critical-toggle.on .critical-toggle-label{color:#e24b4a;}
 .card:hover{border-color:rgba(68,108,227,0.7);box-shadow:0 4px 14px rgba(0,0,0,0.35);}
 .card.dragging{opacity:.35;cursor:grabbing;transform:rotate(1deg) scale(.97);}
 .card-actions{position:absolute;top:7px;right:7px;display:none;gap:4px;}
@@ -369,6 +380,12 @@ tr:hover .lt-actions{opacity:1;}
       <div class="field full"><label>Assigned To</label><input type="text" id="f-assigned" placeholder="Student name"/></div>
       <div class="field full"><label>CAD Link</label><input type="url" id="f-cadlink" placeholder="https://cad.onshape.com/..."/></div>
       <div class="field full"><label>Notes</label><textarea id="f-notes" placeholder="Special instructions, tolerances, etc."></textarea></div>
+      <div class="field full">
+        <div class="critical-toggle" id="critical-toggle" onclick="toggleCritical()">
+          <div class="critical-toggle-dot"></div>
+          <span class="critical-toggle-label">Mark as Critical</span>
+        </div>
+      </div>
     </div>
     <div class="modal-actions">
       <button class="btn-delete" id="btn-delete" onclick="deleteCurrentCard()" style="display:none">Delete Card</button>
@@ -586,7 +603,11 @@ function getFiltered() {
     (!fmat || c.material   === fmat) &&
     (!fthk || fmtThickness(c.thickness) === fthk) &&
     (!fs   || c.name.toLowerCase().includes(fs))
-  ).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  ).sort((a, b) => {
+    if (a.is_critical && !b.is_critical) return -1;
+    if (!a.is_critical && b.is_critical) return 1;
+    return new Date(b.created_at) - new Date(a.created_at);
+  });
   document.getElementById('filter-count').textContent =
     `${filtered.length} of ${allCards.length} card${allCards.length!==1?'s':''}`;
   return filtered;
@@ -619,7 +640,7 @@ function buildBoard() {
 
 function makeCardEl(card) {
   const el = document.createElement('div');
-  el.className = 'card'; el.dataset.id = card.id; el.draggable = true;
+  el.className = 'card' + (card.is_critical ? ' is-critical' : ''); el.dataset.id = card.id; el.draggable = true;
   el.addEventListener('dragstart', e => {
     dragCardId = card.id;
     setTimeout(() => el.classList.add('dragging'), 0);
@@ -654,6 +675,7 @@ function makeCardEl(card) {
     meta.push(`<div class="card-meta-row" style="color:var(--muted);font-size:.65rem;">${esc(_sub)}</div>`);
   }
   el.innerHTML = `
+    ${card.is_critical ? `<div class="critical-ribbon"><div class="critical-ribbon-dot"></div>Critical</div>` : ''}
     <div class="card-actions">
       <button class="card-btn card-btn-edit" onclick="event.stopPropagation();openEditModal('${card.id}')" title="Edit">✎</button>
       <button class="card-btn card-btn-del" onclick="event.stopPropagation();confirmDelete('${card.id}')" title="Delete">✕</button>
@@ -862,6 +884,7 @@ function openNewCardModal() {
   document.getElementById('btn-delete').style.display = 'none';
   ['f-name','f-project','f-machine','f-parttype','f-material','f-thickness','f-finish','f-qty','f-assigned','f-cadlink','f-notes']
     .forEach(id => document.getElementById(id).value = '');
+  document.getElementById('critical-toggle').classList.remove('on');
   populateStatusSelect('Needs Drawing');
   document.getElementById('modal').classList.add('open');
   document.getElementById('f-name').focus();
@@ -884,9 +907,12 @@ function openEditModal(id) {
   document.getElementById('f-assigned').value  = c.assigned_to || '';
   document.getElementById('f-cadlink').value   = c.cad_link    || '';
   document.getElementById('f-notes').value     = c.notes       || '';
+  const ct = document.getElementById('critical-toggle');
+  ct.classList.toggle('on', !!c.is_critical);
   document.getElementById('modal').classList.add('open');
 }
 function closeModal() { document.getElementById('modal').classList.remove('open'); }
+function toggleCritical() { document.getElementById('critical-toggle').classList.toggle('on'); }
 function handleBackdropClick(e) { if(e.target===e.currentTarget) closeModal(); }
 
 async function saveCard() {
@@ -906,6 +932,7 @@ async function saveCard() {
     assigned:document.getElementById('f-assigned').value,
     cadLink:document.getElementById('f-cadlink').value,
     notes:document.getElementById('f-notes').value,
+    isCritical: document.getElementById('critical-toggle').classList.contains('on'),
   };
   try {
     if (editingId) {
@@ -916,6 +943,7 @@ async function saveCard() {
         machine:updates.machine, part_type:updates.partType, material:updates.material,
         thickness:updates.thickness, finish:updates.finish, quantity:updates.quantity,
         assigned_to:updates.assigned, cad_link:updates.cadLink, notes:updates.notes,
+        is_critical:updates.isCritical,
         submitted_by:allCards[idx].submitted_by, created_at:allCards[idx].created_at };
       toast('Card updated');
     } else {
