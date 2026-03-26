@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Manufacturing Pipeline — FRC 6328 v1.79</title>
+<title>Manufacturing Pipeline — FRC 6328 v1.80</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
   :root {
@@ -151,7 +151,7 @@
     <div class="hdr-divider"></div>
     <span class="hdr-title">Mfg Pipeline</span>
     <span class="doc-badge" id="doc-label">No document</span>
-    <span style="font-size:.6rem;color:var(--muted);margin-left:4px;">v1.79</span>
+    <span style="font-size:.6rem;color:var(--muted);margin-left:4px;">v1.80</span>
   </header>
 
   <div id="selection-banner">
@@ -1328,7 +1328,7 @@ async function showPartForm(part,idx){
     <label>Link to CAD</label>
     <input type="url" id="f-cad-link" value="${cadLink}" placeholder="https://cad.onshape.com/documents/..."/>
     <label>Assigned Student</label>
-    <input type="text" id="f-student" placeholder="e.g. Sean Tommasini"/>
+    <input type="text" id="f-student" placeholder="e.g. Sean Tommasini" value="${localStorage.getItem('mfg_student_name')||''}"/>
     <label>Details / Notes</label>
     <textarea id="f-notes" placeholder="Special instructions, tolerances, references..."></textarea>
     <hr class="sec-div"/>
@@ -1496,7 +1496,8 @@ async function submitPart(){
   const payload={name,project,machine:getPillVal('machine'),material:getPillVal('material'),
     thickness:getPillVal('thickness'),partType:getPillVal('partType'),qty,finish:getPillVal('finish'),
     status,cadLink:v('f-cad-link'),fileName:attachedFile?attachedFile.name:'',student:v('f-student'),
-    notes:v('f-notes'),partId:part.id};
+    submittedBy:v('f-student'),notes:v('f-notes'),partId:part.id};
+  if(v('f-student')) localStorage.setItem('mfg_student_name', v('f-student'));
 
   try{
     if(CONFIG.demo){
